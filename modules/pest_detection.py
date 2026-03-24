@@ -1,221 +1,316 @@
-import streamlit as st
+import os
+import json
 import numpy as np
 from PIL import Image
-import json, os, requests
-from database.db import add_pest_log, get_all_farmers
+import tensorflow as tf
+from tensorflow.keras.models import load_model
 
-MODEL_PATH = "models/plant_disease_model.h5"
-INDEX_PATH = "models/class_indices.json"
-MODEL_URL  = "https://huggingface.co/spaces/etahamad/plant-disease-detection/resolve/main/model.h5"
+# ── Path Setup (works regardless of where the script is called from) ──────────
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # project root
+MODEL_PATH = os.path.join(BASE_DIR, "models", "plant_disease_model.h5")
+CLASS_INDICES_PATH = os.path.join(BASE_DIR, "models", "class_indices.json")
 
-CLASS_INDICES = {
-    "0": "Apple___Apple_scab", "1": "Apple___Black_rot",
-    "2": "Apple___Cedar_apple_rust", "3": "Apple___healthy",
-    "4": "Blueberry___healthy", "5": "Cherry___Powdery_mildew",
-    "6": "Cherry___healthy", "7": "Corn___Cercospora_leaf_spot",
-    "8": "Corn___Common_rust", "9": "Corn___Northern_Leaf_Blight",
-    "10": "Corn___healthy", "11": "Grape___Black_rot",
-    "12": "Grape___Esca", "13": "Grape___Leaf_blight",
-    "14": "Grape___healthy", "15": "Orange___Haunglongbing",
-    "16": "Peach___Bacterial_spot", "17": "Peach___healthy",
-    "18": "Pepper___Bacterial_spot", "19": "Pepper___healthy",
-    "20": "Potato___Early_blight", "21": "Potato___Late_blight",
-    "22": "Potato___healthy", "23": "Raspberry___healthy",
-    "24": "Soybean___healthy", "25": "Squash___Powdery_mildew",
-    "26": "Strawberry___Leaf_scorch", "27": "Strawberry___healthy",
-    "28": "Tomato___Bacterial_spot", "29": "Tomato___Early_blight",
-    "30": "Tomato___Late_blight", "31": "Tomato___Leaf_Mold",
-    "32": "Tomato___Septoria_leaf_spot", "33": "Tomato___Spider_mites",
-    "34": "Tomato___Target_Spot", "35": "Tomato___Yellow_Leaf_Curl_Virus",
-    "36": "Tomato___mosaic_virus", "37": "Tomato___healthy"
-}
+# ── Load Model ────────────────────────────────────────────────────────────────
+@st.cache_resource
+def load_disease_model():
+    model = load_model(MODEL_PATH, compile=False)
+    return model
 
-DISEASE_INFO = {
-    "Apple___Apple_scab": {
-        "type": "Fungal", "severity": "High",
-        "chemical": "Apply Captan (2g/L) or Mancozeb (2.5g/L) every 7-10 days during wet weather.",
-        "organic": "Spray neem oil (5ml/L) or baking soda solution (5g/L) on affected leaves.",
-        "cultural": "Rake and destroy fallen leaves. Prune crowded branches for airflow.",
-        "prevention": "Plant scab-resistant apple varieties. Apply dormant oil spray before bud break."
-    },
-    "Apple___Black_rot": {
-        "type": "Fungal", "severity": "High",
-        "chemical": "Apply Thiophanate-methyl or Captan fungicide at petal fall stage.",
-        "organic": "Copper-based fungicide (Bordeaux mixture). Remove mummified fruits immediately.",
-        "cultural": "Prune dead/infected wood. Sanitize pruning tools with 70% alcohol.",
-        "prevention": "Remove all infected fruit from tree and ground. Avoid wounding fruit."
-    },
-    "Apple___Cedar_apple_rust": {
+def load_class_indices():
+    with open(CLASS_INDICES_PATH, "r") as f:
+        class_indices = json.load(f)
+    # Invert: {index: class_name}
+    return {v: k for k, v in class_indices.items()}
+
+# ── Disease Solutions Dictionary ──────────────────────────────────────────────
+DISEASE_SOLUTIONS = {
+    "Apple__Apple_scab": {
         "type": "Fungal", "severity": "Medium",
-        "chemical": "Apply Myclobutanil or Propiconazole fungicide from pink bud through early summer.",
-        "organic": "Sulfur-based fungicide spray every 7 days during infection period.",
-        "cultural": "Remove nearby cedar/juniper trees. Prune galls from cedar in winter.",
-        "prevention": "Plant rust-resistant apple varieties like Liberty or Freedom."
+        "chemical": "Apply Captan or Mancozeb fungicide every 7-10 days.",
+        "organic": "Neem oil spray. Remove fallen leaves.",
+        "cultural": "Prune for airflow. Use resistant varieties.",
+        "prevention": "Rake and destroy fallen leaves in autumn."
     },
-    "Apple___healthy": {
+    "Apple__Black_rot": {
+        "type": "Fungal", "severity": "High",
+        "chemical": "Apply Thiophanate-methyl or Captan fungicide.",
+        "organic": "Copper-based fungicide spray.",
+        "cultural": "Remove mummified fruits and dead wood.",
+        "prevention": "Maintain tree vigor with proper fertilization."
+    },
+    "Apple__Cedar_apple_rust": {
+        "type": "Fungal", "severity": "Medium",
+        "chemical": "Apply Myclobutanil or Propiconazole at bud break.",
+        "organic": "Sulfur-based fungicide spray.",
+        "cultural": "Remove nearby juniper/cedar trees if possible.",
+        "prevention": "Plant resistant apple varieties."
+    },
+    "Apple__healthy": {
         "type": "None", "severity": "None",
         "chemical": "No treatment needed.",
-        "organic": "Continue regular neem oil preventive sprays monthly.",
-        "cultural": "Maintain good orchard hygiene. Regular pruning for air circulation.",
-        "prevention": "Monitor regularly. Apply balanced NPK fertilizer for strong immunity."
+        "organic": "Continue preventive neem oil spray monthly.",
+        "cultural": "Maintain good pruning practices.",
+        "prevention": "Regular monitoring for early detection."
     },
-    "Blueberry___healthy": {
-        "type": "None", "severity": "None",
-        "chemical": "No treatment needed.",
-        "organic": "Apply compost mulch around base to retain moisture.",
-        "cultural": "Maintain soil pH between 4.5-5.5 for optimal blueberry health.",
-        "prevention": "Regular monitoring. Ensure adequate irrigation during fruiting."
-    },
-    "Cherry___Powdery_mildew": {
-        "type": "Fungal", "severity": "Medium",
-        "chemical": "Apply Trifloxystrobin or Myclobutanil fungicide every 10-14 days.",
-        "organic": "Potassium bicarbonate (10g/L) or diluted milk spray (1:9 ratio) weekly.",
-        "cultural": "Improve air circulation by thinning canopy. Avoid excess nitrogen.",
-        "prevention": "Plant resistant cherry varieties. Avoid overhead watering."
-    },
-    "Cherry___healthy": {
-        "type": "None", "severity": "None",
-        "chemical": "No treatment needed.",
-        "organic": "Preventive neem oil spray every 2-3 weeks.",
-        "cultural": "Regular pruning. Balanced fertilization.",
-        "prevention": "Monitor for early signs of powdery mildew in humid weather."
-    },
-    "Corn___Cercospora_leaf_spot": {
-        "type": "Fungal", "severity": "Medium",
-        "chemical": "Apply Azoxystrobin + Propiconazole at VT/R1 stage.",
-        "organic": "Copper hydroxide spray. Trichoderma-based biocontrol agents.",
-        "cultural": "Crop rotation with non-host crops. Bury infected crop residues.",
-        "prevention": "Use resistant hybrids. Avoid continuous corn cropping in same field."
-    },
-    "Corn___Common_rust": {
-        "type": "Fungal", "severity": "Medium",
-        "chemical": "Apply Propiconazole or Trifloxystrobin at early rust appearance.",
-        "organic": "Sulfur dust application. Neem oil spray (3ml/L) weekly.",
-        "cultural": "Plant early-maturing varieties to escape peak infection periods.",
-        "prevention": "Use rust-resistant corn hybrids. Scout fields regularly from V6 stage."
-    },
-    "Corn___Northern_Leaf_Blight": {
+    "Corn__Cercospora_leaf_spot Gray_leaf_spot": {
         "type": "Fungal", "severity": "High",
-        "chemical": "Apply Azoxystrobin or Pyraclostrobin at first sign of lesions.",
-        "organic": "Bacillus subtilis-based products (Serenade). Copper sulfate spray.",
-        "cultural": "Rotate crops. Till infected residues. Plant after soil reaches 15 degrees C.",
+        "chemical": "Apply Azoxystrobin or Propiconazole fungicide.",
+        "organic": "Copper hydroxide spray.",
+        "cultural": "Crop rotation. Reduce plant density.",
         "prevention": "Use resistant hybrids. Avoid overhead irrigation."
     },
-    "Corn___healthy": {
-        "type": "None", "severity": "None",
-        "chemical": "No treatment needed.",
-        "organic": "Apply compost tea as foliar spray for immunity boost.",
-        "cultural": "Maintain proper plant spacing (60-75cm row spacing).",
-        "prevention": "Monitor weekly. Scout for aphids and armyworms."
+    "Corn__Common_rust": {
+        "type": "Fungal", "severity": "Medium",
+        "chemical": "Apply Trifloxystrobin or Propiconazole at first sign.",
+        "organic": "Sulfur dust application.",
+        "cultural": "Plant resistant varieties. Early planting.",
+        "prevention": "Monitor fields regularly during warm humid weather."
     },
-    "Grape___Black_rot": {
+    "Corn__Northern_Leaf_Blight": {
         "type": "Fungal", "severity": "High",
-        "chemical": "Apply Myclobutanil (Rally) or Mancozeb every 7-14 days from bud break.",
-        "organic": "Bordeaux mixture (1%) at bud break and bloom stages.",
-        "cultural": "Remove all mummified berries from vine and ground. Prune for airflow.",
-        "prevention": "Train vines to improve air circulation. Avoid leaf wetness."
+        "chemical": "Apply Azoxystrobin + Propiconazole at tasseling.",
+        "organic": "Biopesticide Bacillus subtilis spray.",
+        "cultural": "Crop rotation with non-host crops.",
+        "prevention": "Plant resistant hybrids."
     },
-    "Grape___Esca": {
-        "type": "Fungal (Wood disease)", "severity": "Very High",
-        "chemical": "No curative fungicide available. Protect pruning wounds immediately.",
-        "organic": "Trichoderma harzianum wound protectant on pruning cuts.",
-        "cultural": "Remove and destroy infected wood. Disinfect pruning tools.",
-        "prevention": "Protect pruning wounds with sealant. Prune during dry weather."
+    "Corn__healthy": {
+        "type": "None", "severity": "None",
+        "chemical": "No treatment needed.",
+        "organic": "No treatment needed.",
+        "cultural": "Maintain proper spacing and fertilization.",
+        "prevention": "Continue scouting weekly."
     },
-    "Grape___Leaf_blight": {
+    "Grape__Black_rot": {
+        "type": "Fungal", "severity": "High",
+        "chemical": "Apply Mancozeb or Myclobutanil before bloom.",
+        "organic": "Copper sulfate spray (Bordeaux mixture).",
+        "cultural": "Remove mummified berries. Improve canopy airflow.",
+        "prevention": "Prune properly. Avoid wetting foliage."
+    },
+    "Grape__Esca_(Black_Measles)": {
+        "type": "Fungal", "severity": "High",
+        "chemical": "No fully effective chemical treatment. Protect pruning wounds with fungicide paste.",
+        "organic": "Trichoderma-based biological treatment on wounds.",
+        "cultural": "Remove and burn infected wood. Sterilize pruning tools.",
+        "prevention": "Avoid large pruning cuts. Protect wounds immediately."
+    },
+    "Grape__Leaf_blight_(Isariopsis_Leaf_Spot)": {
         "type": "Fungal", "severity": "Medium",
-        "chemical": "Apply Iprodione or Fludioxonil fungicide. Mancozeb as protectant.",
-        "organic": "Copper oxychloride spray (3g/L). Increase frequency in humid weather.",
-        "cultural": "Remove infected leaves promptly. Improve canopy ventilation.",
-        "prevention": "Avoid water stress. Maintain balanced nutrition (avoid excess N)."
+        "chemical": "Apply Mancozeb or Copper oxychloride.",
+        "organic": "Neem oil + copper soap spray.",
+        "cultural": "Improve ventilation. Remove infected leaves.",
+        "prevention": "Avoid overhead watering."
     },
-    "Grape___healthy": {
+    "Grape__healthy": {
         "type": "None", "severity": "None",
         "chemical": "No treatment needed.",
-        "organic": "Preventive Bordeaux mixture spray before monsoon.",
-        "cultural": "Regular canopy management. Proper trellis training.",
-        "prevention": "Monitor for downy/powdery mildew weekly."
-    },
-    "Orange___Haunglongbing": {
-        "type": "Bacterial (Citrus Greening)", "severity": "CRITICAL - No Cure",
-        "chemical": "No cure exists. Remove and destroy infected trees immediately.",
-        "organic": "Neem oil spray to control Asian Citrus Psyllid (vector insect).",
-        "cultural": "Quarantine infected trees. Use certified disease-free nursery plants only.",
-        "prevention": "Control psyllid population with Imidacloprid. Plant in psyllid-free areas."
-    },
-    "Peach___Bacterial_spot": {
-        "type": "Bacterial", "severity": "High",
-        "chemical": "Apply copper hydroxide or oxytetracycline at bud swell. Repeat weekly.",
-        "organic": "Copper sulfate spray (Bordeaux mixture) from dormant season.",
-        "cultural": "Avoid overhead irrigation. Remove infected twigs during dormancy.",
-        "prevention": "Plant resistant peach varieties. Windbreaks reduce spread."
-    },
-    "Peach___healthy": {
-        "type": "None", "severity": "None",
-        "chemical": "No treatment needed.",
-        "organic": "Dormant copper spray as preventive measure.",
-        "cultural": "Annual pruning for canopy airflow. Thin fruit for better size.",
-        "prevention": "Monitor for peach leaf curl and brown rot."
-    },
-    "Pepper___Bacterial_spot": {
-        "type": "Bacterial", "severity": "High",
-        "chemical": "Apply copper hydroxide (Kocide) + Mancozeb weekly from transplanting.",
-        "organic": "Copper-based Bordeaux mixture. Biocontrol with Bacillus amyloliquefaciens.",
-        "cultural": "Avoid overhead irrigation. Rotate away from solanaceous crops 2 years.",
-        "prevention": "Use certified disease-free seed. Hot water seed treatment (50C for 25 min)."
-    },
-    "Pepper___healthy": {
-        "type": "None", "severity": "None",
-        "chemical": "No treatment needed.",
-        "organic": "Foliar spray with compost tea for nutrient boost.",
-        "cultural": "Stake plants. Ensure good drainage. Proper spacing (45cm).",
-        "prevention": "Monitor for aphids and thrips which spread viruses."
-    },
-    "Potato___Early_blight": {
-        "type": "Fungal", "severity": "Medium",
-        "chemical": "Apply Chlorothalonil (Bravo) or Mancozeb every 7-10 days.",
-        "organic": "Neem oil (5ml/L) + copper soap spray. Bacillus subtilis products.",
-        "cultural": "Crop rotation (3-year cycle). Remove infected leaves. Avoid excess nitrogen.",
-        "prevention": "Plant certified disease-free seed potatoes. Hill soil around stems."
-    },
-    "Potato___Late_blight": {
-        "type": "Fungal (Oomycete)", "severity": "CRITICAL",
-        "chemical": "Apply Metalaxyl + Mancozeb (Ridomil Gold) immediately. Repeat every 5-7 days.",
-        "organic": "Copper hydroxide spray (Bordeaux mixture 1%). Limited effectiveness.",
-        "cultural": "Destroy all infected plant material by burning. Do not compost.",
-        "prevention": "Plant resistant varieties. Avoid overhead irrigation. Monitor daily."
-    },
-    "Potato___healthy": {
-        "type": "None", "severity": "None",
-        "chemical": "No treatment needed.",
-        "organic": "Preventive copper spray before monsoon season.",
-        "cultural": "Hill potatoes regularly. Ensure proper drainage.",
-        "prevention": "Scout weekly. Watch for late blight during cool/wet weather."
-    },
-    "Raspberry___healthy": {
-        "type": "None", "severity": "None",
-        "chemical": "No treatment needed.",
-        "organic": "Apply compost mulch. Neem oil preventive spray.",
+        "organic": "Compost mulch. Neem oil preventive spray.",
         "cultural": "Remove old fruiting canes after harvest.",
-        "prevention": "Monitor for cane blight and botrytis fruit rot."
+        "prevention": "Monitor for cane blight and botrytis."
     },
-    "Soybean___healthy": {
+    "Potato__Early_blight": {
+        "type": "Fungal", "severity": "Medium",
+        "chemical": "Apply Chlorothalonil or Mancozeb every 7 days.",
+        "organic": "Copper-based fungicide or baking soda spray.",
+        "cultural": "Remove lower infected leaves. Avoid overhead irrigation.",
+        "prevention": "Use certified disease-free seed potatoes."
+    },
+    "Potato__Late_blight": {
+        "type": "Fungal/Oomycete", "severity": "Very High",
+        "chemical": "Apply Metalaxyl + Mancozeb immediately. Repeat every 5-7 days.",
+        "organic": "Copper hydroxide spray. Remove and destroy infected plants.",
+        "cultural": "Destroy volunteer plants. Avoid wet foliage.",
+        "prevention": "Plant resistant varieties. Monitor during cool wet weather."
+    },
+    "Potato__healthy": {
         "type": "None", "severity": "None",
         "chemical": "No treatment needed.",
-        "organic": "Rhizobium inoculant at planting for nitrogen fixation.",
-        "cultural": "Maintain 45cm row spacing. Scout for soybean rust.",
-        "prevention": "Monitor for sudden death syndrome and white mold."
+        "organic": "Compost application for soil health.",
+        "cultural": "Hill soil around plants.",
+        "prevention": "Rotate crops every 3 years."
     },
-    "Squash___Powdery_mildew": {
-        "type": "Fungal", "severity": "Medium",
-        "chemical": "Apply Trifloxystrobin or Tebuconazole at first sign.",
-        "organic": "Baking soda solution (5g/L + 2ml dish soap). Neem oil weekly.",
-        "cultural": "Improve air circulation. Remove infected leaves. Avoid evening watering.",
-        "prevention": "Plant resistant varieties. Maintain dry foliage. Space plants adequately."
+    "Rice__Bacterial_leaf_blight": {
+        "type": "Bacterial", "severity": "High",
+        "chemical": "Apply Copper oxychloride 50 WP @ 3g/liter.",
+        "organic": "Pseudomonas fluorescens bioagent spray.",
+        "cultural": "Drain fields. Use balanced nitrogen fertilizer.",
+        "prevention": "Use resistant varieties. Treat seeds before sowing."
     },
-    "Strawberry___Leaf_scorch": {
+    "Rice__Brown_spot": {
         "type": "Fungal", "severity": "Medium",
-        "chemical": "Apply Captan or Myclobutanil fungicide. Start in early spring.",
-        "organic": "Copper hydroxide spray. Remove infected leaves immediately.",
-        "cultural": "Avoid overhead irrigation. Renovate beds after harvest.",
-        "prevention": "Plant certified disease-free runners. Avoid poorly
+        "chemical": "Apply Edifenphos or Tricyclazole fungicide.",
+        "organic": "Neem seed kernel extract spray.",
+        "cultural": "Balanced NPK fertilization. Avoid water stress.",
+        "prevention": "Use resistant varieties and clean seeds."
+    },
+    "Rice__Leaf_smut": {
+        "type": "Fungal", "severity": "Low",
+        "chemical": "Seed treatment with Carbendazim 50 WP.",
+        "organic": "Trichoderma viride seed treatment.",
+        "cultural": "Deep summer plowing. Remove infected stubble.",
+        "prevention": "Use certified seeds. Crop rotation."
+    },
+    "Rice__healthy": {
+        "type": "None", "severity": "None",
+        "chemical": "No treatment needed.",
+        "organic": "No treatment needed.",
+        "cultural": "Maintain proper water management.",
+        "prevention": "Regular field scouting."
+    },
+    "Tomato__Bacterial_spot": {
+        "type": "Bacterial", "severity": "High",
+        "chemical": "Apply Copper bactericide + Mancozeb. Avoid during rain.",
+        "organic": "Copper soap spray. Remove infected leaves.",
+        "cultural": "Use drip irrigation. Stake plants for airflow.",
+        "prevention": "Use certified disease-free transplants."
+    },
+    "Tomato__Early_blight": {
+        "type": "Fungal", "severity": "Medium",
+        "chemical": "Apply Chlorothalonil or Mancozeb every 7-10 days.",
+        "organic": "Copper fungicide spray. Mulch around plants.",
+        "cultural": "Remove lower leaves touching soil.",
+        "prevention": "Rotate tomatoes every 2-3 years."
+    },
+    "Tomato__Late_blight": {
+        "type": "Fungal/Oomycete", "severity": "Very High",
+        "chemical": "Apply Metalaxyl or Cymoxanil + Mancozeb immediately.",
+        "organic": "Copper-based spray. Remove infected tissue.",
+        "cultural": "Improve drainage. Reduce leaf wetness.",
+        "prevention": "Plant resistant varieties. Avoid overhead irrigation."
+    },
+    "Tomato__Leaf_Mold": {
+        "type": "Fungal", "severity": "Medium",
+        "chemical": "Apply Chlorothalonil or Mancozeb.",
+        "organic": "Baking soda + neem oil spray.",
+        "cultural": "Reduce humidity in greenhouse. Improve ventilation.",
+        "prevention": "Avoid wetting foliage when watering."
+    },
+    "Tomato__Septoria_leaf_spot": {
+        "type": "Fungal", "severity": "Medium",
+        "chemical": "Apply Chlorothalonil or Copper fungicide at first sign.",
+        "organic": "Copper soap spray. Remove infected leaves.",
+        "cultural": "Mulch to prevent soil splash. Remove lower leaves.",
+        "prevention": "Crop rotation. Use disease-free transplants."
+    },
+    "Tomato__Spider_mites Two-spotted_spider_mite": {
+        "type": "Pest (Mite)", "severity": "Medium",
+        "chemical": "Apply Abamectin or Bifenazate miticide.",
+        "organic": "Neem oil or insecticidal soap spray. Introduce predatory mites.",
+        "cultural": "Avoid dusty conditions. Overhead water sprays help.",
+        "prevention": "Monitor undersides of leaves regularly."
+    },
+    "Tomato__Target_Spot": {
+        "type": "Fungal", "severity": "Medium",
+        "chemical": "Apply Azoxystrobin or Boscalid fungicide.",
+        "organic": "Copper-based fungicide spray.",
+        "cultural": "Remove infected leaves. Improve air circulation.",
+        "prevention": "Avoid dense planting. Use mulch."
+    },
+    "Tomato__Tomato_Yellow_Leaf_Curl_Virus": {
+        "type": "Viral (Whitefly vector)", "severity": "Very High",
+        "chemical": "Control whiteflies with Imidacloprid or Thiamethoxam.",
+        "organic": "Yellow sticky traps. Neem oil spray for whiteflies.",
+        "cultural": "Remove and destroy infected plants immediately.",
+        "prevention": "Use virus-resistant varieties. Install insect-proof netting."
+    },
+    "Tomato__Tomato_mosaic_virus": {
+        "type": "Viral", "severity": "High",
+        "chemical": "No chemical cure. Disinfect tools with 10% bleach solution.",
+        "organic": "Remove and destroy infected plants.",
+        "cultural": "Wash hands before handling plants. Control aphids.",
+        "prevention": "Use certified virus-free seeds. Resistant varieties."
+    },
+    "Tomato__healthy": {
+        "type": "None", "severity": "None",
+        "chemical": "No treatment needed.",
+        "organic": "Compost tea spray for plant immunity.",
+        "cultural": "Maintain proper staking and pruning.",
+        "prevention": "Scout weekly for early pest/disease signs."
+    },
+    "Wheat__Brown_rust": {
+        "type": "Fungal", "severity": "High",
+        "chemical": "Apply Propiconazole 25 EC @ 1ml/liter at flag leaf stage.",
+        "organic": "Sulfur dust application.",
+        "cultural": "Avoid late sowing. Balanced fertilization.",
+        "prevention": "Use resistant varieties. Early season monitoring."
+    },
+    "Wheat__Yellow_rust": {
+        "type": "Fungal", "severity": "Very High",
+        "chemical": "Apply Tebuconazole or Propiconazole immediately.",
+        "organic": "Sulfur-based fungicide spray.",
+        "cultural": "Avoid excessive nitrogen. Early planting.",
+        "prevention": "Plant resistant varieties. Use certified seeds."
+    },
+    "Wheat__healthy": {
+        "type": "None", "severity": "None",
+        "chemical": "No treatment needed.",
+        "organic": "No treatment needed.",
+        "cultural": "Balanced fertilization and proper irrigation.",
+        "prevention": "Regular field monitoring."
+    },
+}
+
+# ── Image Preprocessing ───────────────────────────────────────────────────────
+def preprocess_image(image: Image.Image, target_size=(224, 224)):
+    img = image.convert("RGB")
+    img = img.resize(target_size)
+    img_array = np.array(img) / 255.0
+    img_array = np.expand_dims(img_array, axis=0)
+    return img_array
+
+# ── Prediction Function ───────────────────────────────────────────────────────
+def predict_disease(image: Image.Image):
+    model = load_disease_model()
+    idx_to_class = load_class_indices()
+    
+    img_array = preprocess_image(image)
+    predictions = model.predict(img_array)
+    predicted_index = np.argmax(predictions[0])
+    confidence = float(np.max(predictions[0])) * 100
+    
+    class_name = idx_to_class.get(predicted_index, "Unknown")
+    solution = DISEASE_SOLUTIONS.get(class_name, {
+        "type": "Unknown",
+        "severity": "Unknown",
+        "chemical": "Consult a local agricultural expert.",
+        "organic": "Consult a local agricultural expert.",
+        "cultural": "Monitor and isolate affected plants.",
+        "prevention": "Regular crop scouting recommended."
+    })
+    
+    return class_name, confidence, solution
+
+# ── Streamlit UI ──────────────────────────────────────────────────────────────
+import streamlit as st
+
+def show_pest_detection():
+    st.title("🔍 Pest & Disease Detection")
+    st.markdown("Upload a clear image of the affected plant leaf for AI-based diagnosis.")
+    
+    uploaded_file = st.file_uploader("Upload Leaf Image", type=["jpg", "jpeg", "png"])
+    
+    if uploaded_file:
+        image = Image.open(uploaded_file)
+        st.image(image, caption="Uploaded Image", use_column_width=True)
+        
+        with st.spinner("Analyzing image..."):
+            class_name, confidence, solution = predict_disease(image)
+        
+        st.success(f"**Detected:** {class_name.replace('__', ' → ').replace('_', ' ')}")
+        st.metric("Confidence", f"{confidence:.1f}%")
+        
+        severity_color = {"None": "🟢", "Low": "🟡", "Medium": "🟠", "High": "🔴", "Very High": "🚨"}.get(solution['severity'], "⚪")
+        
+        st.markdown(f"### {severity_color} Severity: {solution['severity']} | Type: {solution['type']}")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("#### 💊 Chemical Treatment")
+            st.info(solution['chemical'])
+            st.markdown("#### 🌿 Organic Treatment")
+            st.success(solution['organic'])
+        with col2:
+            st.markdown("#### 🌾 Cultural Practices")
+            st.warning(solution['cultural'])
+            st.markdown("#### 🛡️ Prevention")
+            st.error(solution['prevention'])
