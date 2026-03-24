@@ -14,5 +14,9 @@ model.fit(X_train, y_train)
 
 os.makedirs("models", exist_ok=True)
 joblib.dump(model, "models/crop_recommender.pkl")
+# REMOVE this line (has emoji):
 print(f"Model accuracy: {model.score(X_test, y_test)*100:.2f}%")
-# Expected: ~99% accuracy
+
+# REPLACE with this (no emoji):
+print("Model accuracy: %.2f%%" % (model.score(X_test, y_test) * 100))
+print("Model saved to models/crop_recommender.pkl")
