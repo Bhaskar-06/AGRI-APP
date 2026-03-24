@@ -1,28 +1,27 @@
 import os
 import json
 import numpy as np
+import streamlit as st
 from PIL import Image
 import tensorflow as tf
 from tensorflow.keras.models import load_model
 
-# ── Path Setup (works regardless of where the script is called from) ──────────
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # project root
+# ── Path Setup ────────────────────────────────────────────────────────────────
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODEL_PATH = os.path.join(BASE_DIR, "models", "plant_disease_model.h5")
 CLASS_INDICES_PATH = os.path.join(BASE_DIR, "models", "class_indices.json")
 
-# ── Load Model ────────────────────────────────────────────────────────────────
+# ── Load Model (cached) ───────────────────────────────────────────────────────
 @st.cache_resource
 def load_disease_model():
-    model = load_model(MODEL_PATH, compile=False)
-    return model
+    return load_model(MODEL_PATH, compile=False)
 
 def load_class_indices():
     with open(CLASS_INDICES_PATH, "r") as f:
         class_indices = json.load(f)
-    # Invert: {index: class_name}
     return {v: k for k, v in class_indices.items()}
 
-# ── Disease Solutions Dictionary ──────────────────────────────────────────────
+# ── Disease Solutions ─────────────────────────────────────────────────────────
 DISEASE_SOLUTIONS = {
     "Apple__Apple_scab": {
         "type": "Fungal", "severity": "Medium",
@@ -89,7 +88,7 @@ DISEASE_SOLUTIONS = {
     },
     "Grape__Esca_(Black_Measles)": {
         "type": "Fungal", "severity": "High",
-        "chemical": "No fully effective chemical treatment. Protect pruning wounds with fungicide paste.",
+        "chemical": "Protect pruning wounds with fungicide paste.",
         "organic": "Trichoderma-based biological treatment on wounds.",
         "cultural": "Remove and burn infected wood. Sterilize pruning tools.",
         "prevention": "Avoid large pruning cuts. Protect wounds immediately."
@@ -159,7 +158,7 @@ DISEASE_SOLUTIONS = {
     },
     "Tomato__Bacterial_spot": {
         "type": "Bacterial", "severity": "High",
-        "chemical": "Apply Copper bactericide + Mancozeb. Avoid during rain.",
+        "chemical": "Apply Copper bactericide + Mancozeb.",
         "organic": "Copper soap spray. Remove infected leaves.",
         "cultural": "Use drip irrigation. Stake plants for airflow.",
         "prevention": "Use certified disease-free transplants."
@@ -195,7 +194,7 @@ DISEASE_SOLUTIONS = {
     "Tomato__Spider_mites Two-spotted_spider_mite": {
         "type": "Pest (Mite)", "severity": "Medium",
         "chemical": "Apply Abamectin or Bifenazate miticide.",
-        "organic": "Neem oil or insecticidal soap spray. Introduce predatory mites.",
+        "organic": "Neem oil or insecticidal soap spray.",
         "cultural": "Avoid dusty conditions. Overhead water sprays help.",
         "prevention": "Monitor undersides of leaves regularly."
     },
@@ -252,65 +251,57 @@ DISEASE_SOLUTIONS = {
 
 # ── Image Preprocessing ───────────────────────────────────────────────────────
 def preprocess_image(image: Image.Image, target_size=(224, 224)):
-    img = image.convert("RGB")
-    img = img.resize(target_size)
+    img = image.convert("RGB").resize(target_size)
     img_array = np.array(img) / 255.0
-    img_array = np.expand_dims(img_array, axis=0)
-    return img_array
+    return np.expand_dims(img_array, axis=0)
 
-# ── Prediction Function ───────────────────────────────────────────────────────
+# ── Prediction ────────────────────────────────────────────────────────────────
 def predict_disease(image: Image.Image):
     model = load_disease_model()
     idx_to_class = load_class_indices()
-    
     img_array = preprocess_image(image)
     predictions = model.predict(img_array)
-    predicted_index = np.argmax(predictions[0])
+    predicted_index = int(np.argmax(predictions[0]))
     confidence = float(np.max(predictions[0])) * 100
-    
     class_name = idx_to_class.get(predicted_index, "Unknown")
     solution = DISEASE_SOLUTIONS.get(class_name, {
-        "type": "Unknown",
-        "severity": "Unknown",
+        "type": "Unknown", "severity": "Unknown",
         "chemical": "Consult a local agricultural expert.",
         "organic": "Consult a local agricultural expert.",
         "cultural": "Monitor and isolate affected plants.",
         "prevention": "Regular crop scouting recommended."
     })
-    
     return class_name, confidence, solution
 
-# ── Streamlit UI ──────────────────────────────────────────────────────────────
-import streamlit as st
-
-def show_pest_detection():
+# ── Streamlit Page ────────────────────────────────────────────────────────────
+def pest_detection_page():
     st.title("🔍 Pest & Disease Detection")
     st.markdown("Upload a clear image of the affected plant leaf for AI-based diagnosis.")
-    
+
     uploaded_file = st.file_uploader("Upload Leaf Image", type=["jpg", "jpeg", "png"])
-    
+
     if uploaded_file:
         image = Image.open(uploaded_file)
         st.image(image, caption="Uploaded Image", use_column_width=True)
-        
+
         with st.spinner("Analyzing image..."):
             class_name, confidence, solution = predict_disease(image)
-        
-        st.success(f"**Detected:** {class_name.replace('__', ' → ').replace('_', ' ')}")
+
+        display_name = class_name.replace("__", " → ").replace("_", " ")
+        st.success(f"**Detected:** {display_name}")
         st.metric("Confidence", f"{confidence:.1f}%")
-        
-        severity_color = {"None": "🟢", "Low": "🟡", "Medium": "🟠", "High": "🔴", "Very High": "🚨"}.get(solution['severity'], "⚪")
-        
-        st.markdown(f"### {severity_color} Severity: {solution['severity']} | Type: {solution['type']}")
-        
+
+        severity_icon = {"None": "🟢", "Low": "🟡", "Medium": "🟠", "High": "🔴", "Very High": "🚨"}.get(solution["severity"], "⚪")
+        st.markdown(f"### {severity_icon} Severity: **{solution['severity']}** | Type: **{solution['type']}**")
+
         col1, col2 = st.columns(2)
         with col1:
             st.markdown("#### 💊 Chemical Treatment")
-            st.info(solution['chemical'])
+            st.info(solution["chemical"])
             st.markdown("#### 🌿 Organic Treatment")
-            st.success(solution['organic'])
+            st.success(solution["organic"])
         with col2:
             st.markdown("#### 🌾 Cultural Practices")
-            st.warning(solution['cultural'])
+            st.warning(solution["cultural"])
             st.markdown("#### 🛡️ Prevention")
-            st.error(solution['prevention'])
+            st.error(solution["prevention"])
