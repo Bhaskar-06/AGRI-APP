@@ -1,12 +1,11 @@
 import streamlit as st
 import os
 
-# ── MUST be first Streamlit command ──────────────────────────────────────────
 st.set_page_config(
     page_title="AI Smart Agriculture",
     page_icon="🌾",
     layout="wide",
-    initial_sidebar_state="expanded"   # ← Forces sidebar open on Cloud
+    initial_sidebar_state="expanded"
 )
 
 from database.db import init_db, get_connection
@@ -15,76 +14,58 @@ from modules.crop_management import crop_management_page
 from modules.pest_detection import pest_detection_page
 from modules.soil_health import soil_health_page
 
-# Initialize DB
 init_db()
 
-# ── Sidebar ───────────────────────────────────────────────────────────────────
+# Initialize session state for navigation
+if "active_page" not in st.session_state:
+    st.session_state["active_page"] = "🏠 Dashboard"
+
+# Sidebar navigation
 with st.sidebar:
     st.title("🌾 Smart Agriculture")
     st.markdown("**AI-Powered Farm Management**")
     st.markdown("---")
-    page = st.radio(
-        "Navigate",
-        options=["🏠 Dashboard", "👨‍🌾 Farmer Management", "🌱 Crop Management", "🔍 Pest Detection", "🧪 Soil Health"],
-        index=0
-    )
+    pages = ["🏠 Dashboard", "👨‍🌾 Farmer Management", "🌱 Crop Management", "🔍 Pest Detection", "🧪 Soil Health"]
+    for p in pages:
+        if st.button(p, key=f"nav_{p}", use_container_width=True):
+            st.session_state["active_page"] = p
     st.markdown("---")
     st.caption("© 2026 AI Smart Agriculture")
 
-# ── Top Navigation Buttons (visible even if sidebar is collapsed) ─────────────
+# Top nav buttons
 st.markdown("### 🌾 AI Smart Agriculture")
-col1, col2, col3, col4, col5 = st.columns(5)
-with col1:
-    if st.button("🏠 Dashboard", use_container_width=True):
-        st.session_state["page"] = "🏠 Dashboard"
-with col2:
-    if st.button("👨‍🌾 Farmers", use_container_width=True):
-        st.session_state["page"] = "👨‍🌾 Farmer Management"
-with col3:
-    if st.button("🌱 Crops", use_container_width=True):
-        st.session_state["page"] = "🌱 Crop Management"
-with col4:
-    if st.button("🔍 Pest Detection", use_container_width=True):
-        st.session_state["page"] = "🔍 Pest Detection"
-with col5:
-    if st.button("🧪 Soil Health", use_container_width=True):
-        st.session_state["page"] = "🧪 Soil Health"
+cols = st.columns(5)
+nav_labels = ["🏠 Dashboard", "👨‍🌾 Farmers", "🌱 Crops", "🔍 Pest Detection", "🧪 Soil Health"]
+nav_pages  = ["🏠 Dashboard", "👨‍🌾 Farmer Management", "🌱 Crop Management", "🔍 Pest Detection", "🧪 Soil Health"]
+for i, col in enumerate(cols):
+    with col:
+        if st.button(nav_labels[i], key=f"top_{i}", use_container_width=True):
+            st.session_state["active_page"] = nav_pages[i]
 
 st.markdown("---")
+active_page = st.session_state["active_page"]
 
-# Use session_state button click OR sidebar radio (whichever was last used)
-active_page = st.session_state.get("page", page)
-# Sidebar radio always overrides if user clicks it
-if page != st.session_state.get("_last_sidebar", page):
-    active_page = page
-st.session_state["_last_sidebar"] = page
-
-# ── Pages ─────────────────────────────────────────────────────────────────────
 if active_page == "🏠 Dashboard":
     st.title("🌾 AI Smart Agriculture Dashboard")
     st.markdown("""
     ### Welcome to your Smart Farm Management System
-    Use the **sidebar** or **buttons above** to navigate between modules:
+    Use the **sidebar** or **buttons above** to navigate:
     - **👨‍🌾 Farmer Management** — Register and manage farmer profiles
-    - **🌱 Crop Management** — Track planting schedules and field data
+    - **🌱 Crop Management** — Track planting schedules + get pest protection advice
     - **🔍 Pest Detection** — Upload leaf images for AI diagnosis
     - **🧪 Soil Health** — Get crop & fertilizer recommendations
     """)
     conn = get_connection()
     c1, c2, c3 = st.columns(3)
-    c1.metric("👨‍🌾 Farmers", conn.execute("SELECT COUNT(*) FROM farmers").fetchone()[0])
-    c2.metric("🌱 Crop Records", conn.execute("SELECT COUNT(*) FROM crops").fetchone()[0])
-    c3.metric("🧪 Soil Records", conn.execute("SELECT COUNT(*) FROM soil_records").fetchone()[0])
+    c1.metric("👨‍🌾 Farmers",      conn.execute("SELECT COUNT(*) FROM farmers").fetchone()[0])
+    c2.metric("🌱 Crop Records",   conn.execute("SELECT COUNT(*) FROM crops").fetchone()[0])
+    c3.metric("🧪 Soil Records",   conn.execute("SELECT COUNT(*) FROM soil_records").fetchone()[0])
     conn.close()
-
 elif active_page == "👨‍🌾 Farmer Management":
     farmer_management_page()
-
 elif active_page == "🌱 Crop Management":
     crop_management_page()
-
 elif active_page == "🔍 Pest Detection":
     pest_detection_page()
-
 elif active_page == "🧪 Soil Health":
     soil_health_page()
