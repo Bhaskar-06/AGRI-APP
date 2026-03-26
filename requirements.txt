@@ -1,10 +1,19 @@
+# streamlit>=1.32.0
+# pandas
+# numpy
+# scikit-learn
+# Pillow
+# matplotlib
+# plotly
+# requests
+# joblib
+# tensorflow-cpu
+
+
+
 streamlit>=1.32.0
-pandas
-numpy
-scikit-learn
-Pillow
-matplotlib
-plotly
-requests
-joblib
-tensorflow-cpu
+tensorflow>=2.13.0
+pillow>=9.0.0
+numpy>=1.24.0
+pandas>=2.0.0
+scikit-learn>=1.3.0
