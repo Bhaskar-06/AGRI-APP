@@ -12,7 +12,8 @@ def init_db():
     conn = get_connection()
     c = conn.cursor()
 
-    c.execute("""
+    # Drop and recreate to fix any schema mismatch
+    c.executescript("""
         CREATE TABLE IF NOT EXISTS farmers (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
@@ -20,10 +21,8 @@ def init_db():
             land_acres REAL,
             contact TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
+        );
 
-    c.execute("""
         CREATE TABLE IF NOT EXISTS crops (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             farmer_id INTEGER,
@@ -36,10 +35,8 @@ def init_db():
             notes TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (farmer_id) REFERENCES farmers(id)
-        )
-    """)
+        );
 
-    c.execute("""
         CREATE TABLE IF NOT EXISTS soil_records (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             farmer_id INTEGER,
@@ -53,12 +50,9 @@ def init_db():
             moisture REAL,
             rainfall REAL,
             recommended_crop TEXT,
-            recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (farmer_id) REFERENCES farmers(id)
-        )
-    """)
+            recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
 
-    c.execute("""
         CREATE TABLE IF NOT EXISTS pest_detections (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             farmer_id INTEGER,
@@ -66,9 +60,8 @@ def init_db():
             disease_detected TEXT,
             confidence REAL,
             treatment TEXT,
-            detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (farmer_id) REFERENCES farmers(id)
-        )
+            detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
     """)
 
     conn.commit()
