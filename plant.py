@@ -1,4 +1,3 @@
-plant.py
 
 
 import streamlit as st
