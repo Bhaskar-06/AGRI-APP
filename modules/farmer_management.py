@@ -1,62 +1,123 @@
 import streamlit as st
-import pandas as pd
-from database.db import get_connection
+from database.db import (
+    add_farmer, get_all_farmers,
+    update_farmer, delete_farmer,
+    get_crops, get_pest_logs
+)
+
 
 def farmer_management_page():
     st.title("👨‍🌾 Farmer Management")
-    tab1, tab2 = st.tabs(["Register Farmer", "View Farmers"])
+    st.markdown("Register and manage farmer profiles linked to crops, soil records, and pest detections.")
+    st.markdown("---")
 
+    tab1, tab2 = st.tabs(["📝 Register Farmer", "👥 View Farmers"])
+
+    # ── Register Tab ──────────────────────────────────────────────────────────
     with tab1:
         st.subheader("Register New Farmer")
-        name     = st.text_input("Full Name *", key="fm_name")
-        location = st.text_input("Village / District / State", key="fm_loc")
-        land     = st.number_input("Total Land (Acres)", min_value=0.0, step=0.5, key="fm_land")
-        contact  = st.text_input("Contact Number", key="fm_contact")
 
-        if st.button("Register Farmer", type="primary", key="fm_submit"):
-            if not name.strip():
-                st.error("❌ Full Name is required.")
-            else:
-                try:
-                    conn = get_connection()
-                    conn.execute(
-                        "INSERT INTO farmers (name, location, land_acres, contact) VALUES (?,?,?,?)",
-                        (name.strip(), location.strip(), land, contact.strip())
-                    )
-                    conn.commit()
-                    conn.close()
-                    st.success(f"✅ Farmer **{name}** registered successfully!")
-                    st.balloons()
-                except Exception as e:
-                    st.error(f"Database error: {e}")
+        with st.container():
+            name = st.text_input("Full Name *", placeholder="e.g. Ravi Kumar")
+            location = st.text_input("Village / District / State", placeholder="e.g. Mysuru, Karnataka")
+            land_area = st.number_input("Total Land (Acres)", min_value=0.0, step=0.5, format="%.2f")
+            phone = st.text_input("Contact Number", placeholder="e.g. 9876543210")
 
+            if st.button("✅ Register Farmer", type="primary"):
+                if not name.strip():
+                    st.error("❌ Full Name is required.")
+                else:
+                    try:
+                        add_farmer(
+                            name=name.strip(),
+                            phone=phone.strip(),
+                            location=location.strip(),
+                            land_area=land_area
+                        )
+                        st.success(f"✅ Farmer **{name}** registered successfully!")
+                        st.balloons()
+                    except Exception as e:
+                        st.error(f"Database error: {e}")
+
+    # ── View Farmers Tab ──────────────────────────────────────────────────────
     with tab2:
         st.subheader("All Registered Farmers")
-        try:
-            conn = get_connection()
-            rows = conn.execute("SELECT id, name, location, land_acres, contact, created_at FROM farmers ORDER BY created_at DESC").fetchall()
-            conn.close()
 
-            if rows:
-                df = pd.DataFrame(rows, columns=["ID", "Name", "Location", "Land (Acres)", "Contact", "Registered On"])
-                st.dataframe(df, use_container_width=True)
+        try:
+            farmers = get_all_farmers()
+        except Exception as e:
+            st.error(f"Could not load farmers: {e}")
+            return
+
+        if not farmers:
+            st.info("No farmers registered yet. Go to 'Register Farmer' tab to add one.")
+            return
+
+        st.write(f"**Total Farmers: {len(farmers)}**")
+        st.markdown("---")
+
+        for farmer in farmers:
+            fid        = farmer["id"]
+            fname      = farmer["name"]
+            fphone     = farmer["phone"]     or "—"
+            flocation  = farmer["location"]  or "—"
+            fland      = farmer["land_area"] if farmer["land_area"] else 0.0
+
+            with st.expander(f"👨‍🌾 {fname}  |  📍 {flocation}  |  🌾 {fland} acres"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.write(f"**ID:** {fid}")
+                    st.write(f"**Name:** {fname}")
+                    st.write(f"**Phone:** {fphone}")
+                with col2:
+                    st.write(f"**Location:** {flocation}")
+                    st.write(f"**Land Area:** {fland} acres")
+
+                # Crop summary
+                try:
+                    crops = get_crops(fid)
+                    if crops:
+                        st.markdown(f"**🌱 Crops ({len(crops)}):**")
+                        for crop in crops:
+                            st.write(f"  • {crop['crop_name']} — planted {crop['planting_date']}")
+                except Exception:
+                    pass
+
+                # Pest log summary
+                try:
+                    logs = get_pest_logs(fid)
+                    if logs:
+                        st.markdown(f"**🔍 Disease Detections ({len(logs)}):**")
+                        for log in logs[:3]:  # show last 3
+                            conf = f"{log['confidence']*100:.1f}%" if log['confidence'] else "—"
+                            st.write(f"  • {log['disease_detected']} ({conf}) — {log['detected_at']}")
+                except Exception:
+                    pass
 
                 st.markdown("---")
-                st.subheader("🗑️ Delete Farmer")
-                farmer_list = [f"{r['id']} - {r['name']}" for r in rows]
-                selected = st.selectbox("Select Farmer to Delete", farmer_list)
-                if st.button("Delete Farmer", key="fm_delete"):
-                    fid = int(selected.split(" - ")[0])
-                    conn = get_connection()
-                    conn.execute("DELETE FROM farmers WHERE id=?", (fid,))
-                    conn.execute("DELETE FROM crops WHERE farmer_id=?", (fid,))
-                    conn.execute("DELETE FROM soil_records WHERE farmer_id=?", (fid,))
-                    conn.execute("DELETE FROM pest_detections WHERE farmer_id=?", (fid,))
-                    conn.commit()
-                    conn.close()
-                    st.success("Farmer and all related records deleted.")
-                    st.rerun()
-            else:
-                st.info("No farmers registered yet.")
-        except Exception as e:
-            st.error(f"Database error: {e}")
+                ecol1, ecol2 = st.columns(2)
+
+                # Edit form
+                with ecol1:
+                    with st.popover("✏️ Edit Farmer"):
+                        new_name     = st.text_input("Name",     value=fname,     key=f"en_{fid}")
+                        new_location = st.text_input("Location", value=flocation if flocation != "—" else "", key=f"el_{fid}")
+                        new_land     = st.number_input("Land (Acres)", value=float(fland), min_value=0.0, step=0.5, key=f"eld_{fid}")
+                        new_phone    = st.text_input("Phone",    value=fphone if fphone != "—" else "", key=f"ep_{fid}")
+                        if st.button("💾 Save Changes", key=f"save_{fid}"):
+                            try:
+                                update_farmer(fid, new_name, new_phone, new_location, new_land)
+                                st.success("Updated!")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Update failed: {e}")
+
+                # Delete
+                with ecol2:
+                    if st.button(f"🗑️ Delete", key=f"del_{fid}", type="secondary"):
+                        try:
+                            delete_farmer(fid)
+                            st.success(f"Deleted farmer {fname}.")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Delete failed: {e}")
