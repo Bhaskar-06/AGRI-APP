@@ -10,52 +10,95 @@ def get_connection():
     return conn
 
 
+def _get_columns(conn, table):
+    """Return list of column names for a table (empty list if table doesn't exist)."""
+    try:
+        c = conn.cursor()
+        c.execute(f"PRAGMA table_info({table})")
+        return [row[1] for row in c.fetchall()]
+    except Exception:
+        return []
+
+
 def _migrate(conn):
     """
-    Auto-migration: fixes column name mismatches in already-deployed databases.
-    SQLite does not support ALTER COLUMN or RENAME COLUMN in older versions,
-    so we recreate the table with correct columns when needed.
+    Auto-migration: fixes ALL column name mismatches caused by old code.
+    Runs every startup — safe to call repeatedly.
     """
     c = conn.cursor()
 
-    # Check existing columns in farmers table
-    c.execute("PRAGMA table_info(farmers)")
-    cols = [row[1] for row in c.fetchall()]
-
-    # If 'land_acres' exists but 'land_area' does not → rename via table rebuild
-    if "land_acres" in cols and "land_area" not in cols:
+    # ── FIX 1: farmers table — land_acres → land_area ────────────────────────
+    farmer_cols = _get_columns(conn, "farmers")
+    if "land_acres" in farmer_cols and "land_area" not in farmer_cols:
         c.executescript("""
-            ALTER TABLE farmers RENAME TO farmers_old;
-
+            ALTER TABLE farmers RENAME TO _farmers_old;
             CREATE TABLE farmers (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                name        TEXT NOT NULL,
-                phone       TEXT,
-                location    TEXT,
-                land_area   REAL,
-                created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                name       TEXT NOT NULL,
+                phone      TEXT,
+                location   TEXT,
+                land_area  REAL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
-
             INSERT INTO farmers (id, name, phone, location, land_area, created_at)
-            SELECT id, name, phone, location, land_acres, created_at FROM farmers_old;
-
-            DROP TABLE farmers_old;
+                SELECT id, name, phone, location, land_acres, created_at FROM _farmers_old;
+            DROP TABLE _farmers_old;
         """)
         conn.commit()
 
-    # If neither column exists yet (fresh or broken) — create fresh
-    elif "land_area" not in cols and "land_acres" not in cols:
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS farmers (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                name        TEXT NOT NULL,
-                phone       TEXT,
-                location    TEXT,
-                land_area   REAL,
-                created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
+    # ── FIX 2: crops table — add missing columns / rename field_name ─────────
+    crop_cols = _get_columns(conn, "crops")
+
+    # If crops table has field_name but not crop_name → full rebuild
+    if "field_name" in crop_cols and "crop_name" not in crop_cols:
+        # Check which extra columns exist to preserve data
+        has_status = "status" in crop_cols
+        has_area   = "area"   in crop_cols
+
+        status_col   = ", status"  if has_status else ""
+        status_val   = ", status"  if has_status else ""
+        area_col     = ", area"    if has_area   else ""
+        area_val     = ", area"    if has_area   else ""
+
+        c.executescript(f"""
+            ALTER TABLE crops RENAME TO _crops_old;
+            CREATE TABLE crops (
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                farmer_id        INTEGER,
+                crop_name        TEXT NOT NULL,
+                planting_date    TEXT,
+                expected_harvest TEXT,
+                area             REAL,
+                status           TEXT DEFAULT 'Growing',
+                notes            TEXT,
+                created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (farmer_id) REFERENCES farmers(id)
+            );
+            INSERT INTO crops
+                (id, farmer_id, crop_name, planting_date, expected_harvest{area_col}{status_col}, notes, created_at)
+            SELECT
+                id, farmer_id, field_name, planting_date, expected_harvest{area_val}{status_val}, notes, created_at
+            FROM _crops_old;
+            DROP TABLE _crops_old;
         """)
         conn.commit()
+
+    # If status column missing from crops → add it
+    crop_cols = _get_columns(conn, "crops")  # re-read after possible rebuild
+    if crop_cols and "status" not in crop_cols:
+        c.execute("ALTER TABLE crops ADD COLUMN status TEXT DEFAULT 'Growing'")
+        conn.commit()
+
+    # ── FIX 3: soil_records — add any missing columns ────────────────────────
+    soil_cols = _get_columns(conn, "soil_records")
+    if soil_cols:
+        for col, col_type in [("temperature", "REAL"), ("crop_type", "TEXT")]:
+            if col not in soil_cols:
+                try:
+                    c.execute(f"ALTER TABLE soil_records ADD COLUMN {col} {col_type}")
+                    conn.commit()
+                except Exception:
+                    pass
 
 
 def init_db():
@@ -65,12 +108,12 @@ def init_db():
     # ── Farmers ───────────────────────────────────────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS farmers (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            name        TEXT NOT NULL,
-            phone       TEXT,
-            location    TEXT,
-            land_area   REAL,
-            created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            name       TEXT NOT NULL,
+            phone      TEXT,
+            location   TEXT,
+            land_area  REAL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
 
@@ -83,6 +126,7 @@ def init_db():
             planting_date    TEXT,
             expected_harvest TEXT,
             area             REAL,
+            status           TEXT DEFAULT 'Growing',
             notes            TEXT,
             created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (farmer_id) REFERENCES farmers(id)
@@ -107,22 +151,19 @@ def init_db():
     # ── Pest / Disease Logs ───────────────────────────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS pest_logs (
-            id                INTEGER PRIMARY KEY AUTOINCREMENT,
-            farmer_id         INTEGER,
-            image_name        TEXT,
-            disease_detected  TEXT,
-            confidence        REAL,
-            treatment         TEXT,
-            detected_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            farmer_id        INTEGER,
+            image_name       TEXT,
+            disease_detected TEXT,
+            confidence       REAL,
+            treatment        TEXT,
+            detected_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (farmer_id) REFERENCES farmers(id)
         )
     """)
 
     conn.commit()
-
-    # Run migration AFTER tables exist
-    _migrate(conn)
-
+    _migrate(conn)   # fix any old column-name mismatches
     conn.close()
 
 
@@ -140,7 +181,8 @@ def add_farmer(name, phone, location, land_area):
     conn = get_connection()
     conn.execute(
         "INSERT INTO farmers (name, phone, location, land_area) VALUES (?, ?, ?, ?)",
-        (name, str(phone), str(location), float(land_area) if land_area else 0.0)
+        (name.strip(), str(phone).strip(), str(location).strip(),
+         float(land_area) if land_area else 0.0)
     )
     conn.commit()
     conn.close()
@@ -150,7 +192,8 @@ def update_farmer(farmer_id, name, phone, location, land_area):
     conn = get_connection()
     conn.execute(
         "UPDATE farmers SET name=?, phone=?, location=?, land_area=? WHERE id=?",
-        (name, str(phone), str(location), float(land_area) if land_area else 0.0, farmer_id)
+        (name, str(phone), str(location),
+         float(land_area) if land_area else 0.0, farmer_id)
     )
     conn.commit()
     conn.close()
@@ -164,14 +207,16 @@ def delete_farmer(farmer_id):
 
 
 # ── Crop CRUD ─────────────────────────────────────────────────────────────────
-def add_crop(farmer_id, crop_name, planting_date, expected_harvest, area, notes):
+def add_crop(farmer_id, crop_name, planting_date, expected_harvest, area, status, notes):
     conn = get_connection()
     conn.execute(
         """INSERT INTO crops
-           (farmer_id, crop_name, planting_date, expected_harvest, area, notes)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        (farmer_id, crop_name, str(planting_date), str(expected_harvest),
-         float(area) if area else 0.0, str(notes))
+           (farmer_id, crop_name, planting_date, expected_harvest, area, status, notes)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (farmer_id, str(crop_name).strip(),
+         str(planting_date), str(expected_harvest),
+         float(area) if area else 0.0,
+         str(status), str(notes).strip())
     )
     conn.commit()
     conn.close()
@@ -189,6 +234,18 @@ def get_crops(farmer_id=None):
     return rows
 
 
+def update_crop(crop_id, crop_name, planting_date, expected_harvest, area, status, notes):
+    conn = get_connection()
+    conn.execute(
+        """UPDATE crops SET crop_name=?, planting_date=?, expected_harvest=?,
+           area=?, status=?, notes=? WHERE id=?""",
+        (crop_name, str(planting_date), str(expected_harvest),
+         float(area) if area else 0.0, status, notes, crop_id)
+    )
+    conn.commit()
+    conn.close()
+
+
 def delete_crop(crop_id):
     conn = get_connection()
     conn.execute("DELETE FROM crops WHERE id=?", (crop_id,))
@@ -203,8 +260,7 @@ def add_soil_record(farmer_id, ph, nitrogen, phosphorus, potassium, moisture):
         """INSERT INTO soil_records
            (farmer_id, ph, nitrogen, phosphorus, potassium, moisture)
            VALUES (?, ?, ?, ?, ?, ?)""",
-        (farmer_id,
-         float(ph), float(nitrogen), float(phosphorus),
+        (farmer_id, float(ph), float(nitrogen), float(phosphorus),
          float(potassium), float(moisture))
     )
     conn.commit()
