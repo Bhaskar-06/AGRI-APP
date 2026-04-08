@@ -23,3 +23,4 @@ git clone https://github.com/Bhaskar-06/AGRI-APP.git
 cd AGRI-APP
 pip install -r requirements.txt
 streamlit run app.py
+## Version 1.0 - Latest Update
