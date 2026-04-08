@@ -4,7 +4,8 @@ from database.db import (
     update_farmer, delete_farmer,
     get_crops, get_pest_logs
 )
-
+# Add at top of file:
+# Farmer Management Module - CRUD Operations
 
 def farmer_management_page():
     st.title("👨‍🌾 Farmer Management")
