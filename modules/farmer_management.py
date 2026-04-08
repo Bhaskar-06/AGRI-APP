@@ -119,3 +119,4 @@ def farmer_management_page():
                             st.rerun()
                         except Exception as e:
                             st.error(f"Delete failed: {e}")
+# Farmer Module v1.0
