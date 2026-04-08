@@ -305,3 +305,4 @@ def get_pest_logs(farmer_id=None):
         rows = conn.execute("SELECT * FROM pest_logs ORDER BY id DESC").fetchall()
     conn.close()
     return rows
+# Database v1.0
