@@ -308,3 +308,5 @@ def pest_detection_page():
                 with st.expander(f"{rank}. {display} ({prob:.1f}%)"):
                     st.write(get_pest_advice(raw_label))
 # Pest Detection v1.0
+
+# Pest Detection v1.0
