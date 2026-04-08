@@ -92,3 +92,5 @@ elif active_page == "🔍 Pest & Disease Detection":
 elif active_page == "🧪 Soil Health":
     soil_health_page()
 # Updated: AI Agriculture App v1.0
+
+# Updated: AI Agriculture App v1.0
