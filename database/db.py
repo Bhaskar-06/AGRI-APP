@@ -306,3 +306,5 @@ def get_pest_logs(farmer_id=None):
     conn.close()
     return rows
 # Database v1.0
+
+# Database v1.0
