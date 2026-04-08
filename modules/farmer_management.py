@@ -120,3 +120,5 @@ def farmer_management_page():
                         except Exception as e:
                             st.error(f"Delete failed: {e}")
 # Farmer Module v1.0
+
+# Farmer Module v1.0
