@@ -13,6 +13,8 @@ from modules.farmer_management import farmer_management_page
 from modules.crop_management import crop_management_page
 from modules.soil_health import soil_health_page
 from plant import pest_detection_page   # Combined pest + disease module
+# Open app.py and add this line at the very top:
+# AI Smart Agriculture Application - Developed by Bhaskar
 
 init_db()
 
