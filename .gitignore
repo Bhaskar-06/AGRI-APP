@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Model files (too large for GitHub)
+models/plant_disease_model.h5
+models/plant_disease_model.keras
+
+# Streamlit secrets
+.streamlit/secrets.toml
+
+# Database
+*.db
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temp
+/tmp/
