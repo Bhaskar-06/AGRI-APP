@@ -24,3 +24,5 @@ cd AGRI-APP
 pip install -r requirements.txt
 streamlit run app.py
 ## Version 1.0 - Latest Update
+
+## Version 1.0 - Latest Update
