@@ -228,3 +228,4 @@ def crop_management_page():
             "- Apply pesticides early morning or evening to minimize bee impact\n"
             "- Keep field drainage clear to prevent fungal diseases"
         )
+# Crop Module v1.0
