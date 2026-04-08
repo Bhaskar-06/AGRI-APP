@@ -132,3 +132,4 @@ def soil_health_page():
                 st.info("No soil records yet.")
         except Exception as e:
             st.error(f"Database error: {e}")
+# Soil Health v1.0
