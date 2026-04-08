@@ -307,3 +307,4 @@ def pest_detection_page():
                 display = raw_label.replace("___", " → ").replace("_", " ")
                 with st.expander(f"{rank}. {display} ({prob:.1f}%)"):
                     st.write(get_pest_advice(raw_label))
+# Pest Detection v1.0
