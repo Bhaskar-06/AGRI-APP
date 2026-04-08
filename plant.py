@@ -481,3 +481,4 @@ def pest_detection_page():
                 except Exception as e:
                     st.error(f"❌ Prediction failed: {e}")
                     st.info("Ensure the image is a clear photo of a plant leaf.")
+# Plant Disease Detection Module v1.0
