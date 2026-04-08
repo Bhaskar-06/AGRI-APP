@@ -17,5 +17,9 @@
 - TensorFlow | Scikit-learn
 - HuggingFace Models
 
-## 👨‍💻 Developer
-**Bhaskar** | [GitHub Profile](https://github.com/Bhaskar-06)
+## ⚙️ Installation
+```bash
+git clone https://github.com/Bhaskar-06/AGRI-APP.git
+cd AGRI-APP
+pip install -r requirements.txt
+streamlit run app.py
