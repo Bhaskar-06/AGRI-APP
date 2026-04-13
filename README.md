@@ -5,7 +5,7 @@
 ## 🚀 Live Demo
 👉 [Open Live App](https://agri-app-djgohfg5i8m2xdbdx2rbor.streamlit.app/)
 ## PPT Link
-https://docs.google.com/presentation/d/1cLZdrjDWzdggvKhHpmeODUzVa52YghPC/edit?usp=sharing&ouid=114438315725441675558&rtpof=true&sd=true
+https://docs.google.com/presentation/d/1htIj13--AOn_aHDPTq6V5FQFY_jGx_AJ/edit?usp=sharing&ouid=114438315725441675558&rtpof=true&sd=true
 
 ## 📌 Features
 - 🌱 Crop Recommendation System
