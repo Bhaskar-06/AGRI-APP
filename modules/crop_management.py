@@ -1,233 +1,260 @@
 import streamlit as st
+import pandas as pd
+from datetime import date, timedelta
 from database.db import (
-    add_crop, get_crops, update_crop, delete_crop,
-    get_all_farmers
+    db_add_crop,
+    db_get_crops,
+    db_update_crop,
+    db_delete_crop,
+    db_get_farmers
 )
 
-CROP_LIST = [
-    "Rice", "Wheat", "Maize / Corn", "Bajra / Pearl Millet", "Jowar / Sorghum",
-    "Sugarcane", "Cotton", "Groundnut", "Soybean", "Sunflower",
-    "Tomato", "Potato", "Onion", "Brinjal / Eggplant", "Chilli / Pepper",
-    "Cabbage", "Cauliflower", "Spinach", "Okra / Bhindi", "Peas",
-    "Mango", "Banana", "Grapes", "Pomegranate", "Apple",
-    "Orange", "Watermelon", "Papaya", "Coconut", "Turmeric",
-    "Ginger", "Garlic", "Mustard", "Lentil / Dal", "Chickpea / Gram",
-    "Other"
-]
-
-STATUS_OPTIONS = ["Growing", "Harvested", "Diseased", "Pending Harvest", "Failed"]
-
-STATUS_EMOJI = {
-    "Growing":         "🌱",
-    "Harvested":       "✅",
-    "Diseased":        "🔴",
-    "Pending Harvest": "🟡",
-    "Failed":          "❌",
-}
-
+# ─────────────────────────────────────────
+# PEST PROTECTION TIPS DATABASE
+# ─────────────────────────────────────────
 PEST_TIPS = {
-    "Rice":             "Watch for Brown Plant Hopper and Blast disease. Use resistant varieties.",
-    "Wheat":            "Monitor for Rust (yellow/brown/black). Apply propiconazole if spotted.",
-    "Maize / Corn":     "Check for Fall Armyworm. Apply chlorpyrifos at early infestation.",
-    "Tomato":           "Watch for Early/Late Blight and whitefly. Use copper fungicide.",
-    "Potato":           "Late Blight is critical — apply Ridomil Gold at first symptoms.",
-    "Cotton":           "Monitor for Bollworm. Use Bt-cotton varieties or spinosad spray.",
-    "Sugarcane":        "Check for top borer and red rot. Use hot water seed treatment.",
-    "Onion":            "Watch for purple blotch. Apply mancozeb every 10 days.",
-    "Chilli / Pepper":  "Thrips and mites are common. Use abamectin or neem oil.",
-    "Groundnut":        "Monitor for leaf spot and tikka disease. Apply carbendazim.",
-    "Banana":           "Panama wilt and Sigatoka leaf spot — use proper drainage.",
-    "Grapes":           "Downy mildew risk in humid conditions. Apply copper fungicide.",
+    "Rice": [
+        "🌾 Apply Carbofuran 3G @ 25 kg/ha for stem borer control",
+        "🔍 Monitor weekly for Brown Plant Hopper (BPH)",
+        "💧 Maintain proper water level (5 cm) to reduce pests",
+        "🌿 Use neem oil spray (5ml/L) for leaf folder control",
+        "🪤 Install light traps @ 1 per acre for moth monitoring"
+    ],
+    "Wheat": [
+        "🌡️ Monitor for Rust diseases during humid conditions",
+        "🐛 Watch for Aphid colonies on leaves and stems",
+        "💊 Apply Mancozeb 75% WP @ 2.5g/L for rust control",
+        "🌿 Spray neem-based pesticide for aphid management",
+        "🔄 Rotate with legumes to break pest cycles"
+    ],
+    "Tomato": [
+        "🐛 Install yellow sticky traps for whitefly monitoring",
+        "🍅 Apply Spinosad for fruit borer at fruit set stage",
+        "🌿 Neem oil (5ml/L) spray every 7 days for mites",
+        "🔍 Check undersides of leaves for early mite detection",
+        "💧 Avoid overhead irrigation to reduce disease spread"
+    ],
+    "Cotton": [
+        "🐛 Monitor Bollworm with pheromone traps",
+        "🌿 Apply Bt spray for Bollworm early instar larvae",
+        "🔍 Check for Jassid/Aphid infestation weekly",
+        "💊 Imidacloprid 17.8% SL @ 0.5ml/L for sucking pests",
+        "🪤 Install 5 pheromone traps per acre"
+    ],
+    "Maize": [
+        "🐛 Watch for Fall Army Worm (FAW) - new major threat",
+        "🌿 Apply Emamectin benzoate for FAW control",
+        "🔍 Check whorl for FAW egg masses and feeding damage",
+        "💊 Chlorpyrifos 20% EC @ 2.5ml/L for stem borer",
+        "🪤 Use light traps and pheromone traps for monitoring"
+    ],
+    "Potato": [
+        "🥔 Late blight is the biggest threat - monitor closely",
+        "🌿 Apply Mancozeb + Metalaxyl for late blight control",
+        "🐛 Watch for Colorado Beetle and aphid vectors",
+        "💧 Avoid excess moisture to prevent tuber rot",
+        "🔄 Use certified disease-free seed tubers"
+    ],
+    "Onion": [
+        "🧅 Thrips is major pest - use blue sticky traps",
+        "🌿 Spinosad 45% SC @ 0.3ml/L for thrips control",
+        "💊 Propiconazole 25% EC for purple blotch disease",
+        "💧 Drip irrigation to reduce leaf wetness",
+        "🔍 Monitor for Thrips tabaci weekly"
+    ],
+    "Default": [
+        "🔍 Monitor crop weekly for early pest detection",
+        "🌿 Use neem oil (5ml/L) as general bio-pesticide",
+        "📋 Maintain field diary for pest observations",
+        "🔄 Practice crop rotation every season",
+        "💧 Avoid excessive irrigation - promotes fungal diseases",
+        "🌱 Use certified seeds for better disease resistance",
+        "📞 Contact local agriculture officer for guidance"
+    ]
 }
 
+# ─────────────────────────────────────────
+# ADD CROP TAB
+# ─────────────────────────────────────────
+def add_crop_tab():
+    st.markdown("### ➕ Add New Crop Record")
 
+    farmers = db_get_farmers()
+
+    if not farmers:
+        st.warning("⚠️ No farmers registered yet. Please register a farmer first.")
+        return
+
+    farmer_options = {f["name"]: f["id"] for f in farmers}
+
+    with st.form("add_crop_form", clear_on_submit=True):
+        col1, col2 = st.columns(2)
+
+        with col1:
+            selected_farmer = st.selectbox("Select Farmer *", options=list(farmer_options.keys()))
+            crop_name = st.selectbox(
+                "Crop Name *",
+                options=["Rice", "Wheat", "Tomato", "Cotton", "Maize", "Potato", "Onion",
+                         "Sugarcane", "Soybean", "Groundnut", "Sunflower", "Chilli",
+                         "Brinjal", "Cabbage", "Other"]
+            )
+            area_acres = st.number_input("Area (Acres)", min_value=0.1, step=0.5, format="%.2f")
+
+        with col2:
+            planting_date = st.date_input("Planting Date", value=date.today())
+            harvest_date = st.date_input("Expected Harvest Date", value=date.today() + timedelta(days=90))
+            status = st.selectbox("Status", options=["Active", "Harvested", "Failed", "Planned"])
+
+        notes = st.text_area("Notes (Optional)", placeholder="Any special observations or notes...", height=80)
+
+        submit = st.form_submit_button("✅ Add Crop Record", type="primary", use_container_width=True)
+
+        if submit:
+            if not crop_name:
+                st.error("❌ Crop name is required!")
+                return
+
+            if harvest_date <= planting_date:
+                st.error("❌ Harvest date must be after planting date!")
+                return
+
+            farmer_id = farmer_options[selected_farmer]
+            success = db_add_crop(
+                farmer_id=farmer_id,
+                crop_name=crop_name,
+                planting_date=planting_date,
+                harvest_date=harvest_date,
+                area_acres=area_acres,
+                status=status,
+                notes=notes
+            )
+
+            if success:
+                st.success(f"✅ {crop_name} record added for {selected_farmer}!")
+                st.balloons()
+            else:
+                st.error("❌ Failed to add crop record. Try again.")
+
+# ─────────────────────────────────────────
+# VIEW ALL CROPS TAB
+# ─────────────────────────────────────────
+def view_crops_tab():
+    st.markdown("### 🌱 All Crop Records")
+
+    col1, col2 = st.columns([4, 1])
+    with col2:
+        if st.button("🔄 Refresh", use_container_width=True):
+            st.rerun()
+
+    crops = db_get_crops()
+
+    if not crops:
+        st.warning("⚠️ No crop records found.")
+        st.info("Go to 'Add Crop Record' tab to add crops.")
+        return
+
+    total_crops = len(crops)
+    active_crops = sum(1 for c in crops if c.get("status") == "Active")
+    total_area = sum(c.get("area_acres", 0) for c in crops)
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("🌱 Total Crops", total_crops)
+    c2.metric("✅ Active Crops", active_crops)
+    c3.metric("🌾 Total Area", f"{total_area:.1f} Acres")
+
+    st.markdown("---")
+
+    rows = []
+    for c in crops:
+        farmer_info = c.get("farmers", {})
+        farmer_name = farmer_info.get("name", "Unknown") if farmer_info else "Unknown"
+
+        rows.append({
+            "ID": c.get("id", ""),
+            "Farmer": farmer_name,
+            "Crop": c.get("crop_name", ""),
+            "Area(Acres)": c.get("area_acres", 0),
+            "Planted": str(c.get("planting_date", ""))[:10],
+            "Harvest": str(c.get("harvest_date", ""))[:10],
+            "Status": c.get("status", ""),
+            "Notes": c.get("notes", "")
+        })
+
+    df = pd.DataFrame(rows)
+
+    def color_status(val):
+        colors = {
+            "Active": "background-color: #1a472a; color: #4ade80",
+            "Harvested": "background-color: #1e3a5f; color: #60a5fa",
+            "Failed": "background-color: #4a1a1a; color: #f87171",
+            "Planned": "background-color: #3a3a1a; color: #fbbf24"
+        }
+        return colors.get(val, "")
+
+    styled_df = df.style.map(color_status, subset=["Status"])
+    st.dataframe(styled_df, use_container_width=True, hide_index=True)
+
+    csv = df.to_csv(index=False)
+    st.download_button("📥 Download CSV", csv, "crop_records.csv", "text/csv", use_container_width=True)
+
+    st.markdown("---")
+    st.markdown("### 🗑️ Delete Crop Record")
+
+    crop_options = {
+        f"#{c.get('id')} - {c.get('crop_name')} ({c.get('status')})": c.get("id")
+        for c in crops
+    }
+
+    selected_crop = st.selectbox("Select crop to delete:", list(crop_options.keys()))
+
+    if st.button("❌ Delete Selected Crop", type="secondary"):
+        crop_id = crop_options[selected_crop]
+        if db_delete_crop(crop_id):
+            st.success("✅ Crop record deleted!")
+            st.rerun()
+        else:
+            st.error("❌ Delete failed!")
+
+# ─────────────────────────────────────────
+# PEST PROTECTION TIPS TAB
+# ─────────────────────────────────────────
+def pest_tips_tab():
+    st.markdown("### 🛡️ Pest Protection Tips")
+
+    crop_list = ["Rice", "Wheat", "Tomato", "Cotton", "Maize", "Potato", "Onion", "Default"]
+    selected = st.selectbox("Select crop for specific tips:", crop_list, index=0)
+
+    tips = PEST_TIPS.get(selected, PEST_TIPS["Default"])
+
+    st.markdown(f"#### Pest Protection Tips for {selected}")
+    st.markdown("---")
+
+    for i, tip in enumerate(tips, 1):
+        st.markdown(f"**{i}.** {tip}")
+
+    st.markdown("---")
+    st.info("""
+    📞 **Need Expert Help?**
+    - Kisan Call Centre: **1800-180-1551** (Toll Free)
+    - Crop Insurance: **1800-200-7710**
+    - Local Agriculture Office: Visit your nearest Krishi Vigyan Kendra
+    """)
+
+# ─────────────────────────────────────────
+# MAIN PAGE
+# ─────────────────────────────────────────
 def crop_management_page():
-    st.title("🌱 Crop Management")
+    st.markdown("# 🌱 Crop Management")
     st.markdown("Track your crops, planting schedules, harvest timelines, and get pest protection advice.")
     st.markdown("---")
 
     tab1, tab2, tab3 = st.tabs(["➕ Add Crop Record", "📋 View All Crops", "🛡️ Pest Protection Tips"])
 
-    # ── ADD CROP ──────────────────────────────────────────────────────────────
     with tab1:
-        st.subheader("Add New Crop Record")
+        add_crop_tab()
 
-        # Farmer selection
-        try:
-            farmers = get_all_farmers()
-        except Exception as e:
-            st.error(f"Could not load farmers: {e}")
-            return
-
-        if not farmers:
-            st.warning("⚠️ No farmers registered yet. Please register a farmer first.")
-            return
-
-        farmer_map = {f"[{f['id']}] {f['name']}": f["id"] for f in farmers}
-        selected_farmer = st.selectbox("👨‍🌾 Select Farmer *", list(farmer_map.keys()))
-        farmer_id = farmer_map[selected_farmer]
-
-        col1, col2 = st.columns(2)
-        with col1:
-            crop_name = st.selectbox("🌾 Crop Name *", CROP_LIST)
-            if crop_name == "Other":
-                crop_name = st.text_input("Enter crop name", placeholder="e.g. Jowar")
-
-            planting_date = st.date_input("📅 Planting Date")
-            area = st.number_input("📐 Field Area (Acres)", min_value=0.0, step=0.5, format="%.2f")
-
-        with col2:
-            expected_harvest = st.date_input("🗓️ Expected Harvest Date")
-            status = st.selectbox("📊 Status", STATUS_OPTIONS)
-            notes = st.text_area("📝 Notes / Observations", placeholder="Any observations about this crop...", height=122)
-
-        st.markdown("")
-        if st.button("💾 Save Crop Record", type="primary"):
-            if not crop_name or crop_name.strip() == "":
-                st.error("❌ Crop name is required.")
-            else:
-                try:
-                    add_crop(
-                        farmer_id=farmer_id,
-                        crop_name=crop_name.strip(),
-                        planting_date=str(planting_date),
-                        expected_harvest=str(expected_harvest),
-                        area=area,
-                        status=status,
-                        notes=notes.strip()
-                    )
-                    st.success(f"✅ **{crop_name}** crop record saved successfully!")
-                    st.balloons()
-                except Exception as e:
-                    st.error(f"Database error: {e}")
-
-    # ── VIEW CROPS ────────────────────────────────────────────────────────────
     with tab2:
-        st.subheader("All Crop Records")
+        view_crops_tab()
 
-        # Filter by farmer
-        try:
-            farmers = get_all_farmers()
-        except Exception:
-            farmers = []
-
-        filter_options = ["All Farmers"] + [f"[{f['id']}] {f['name']}" for f in farmers]
-        filter_sel = st.selectbox("🔍 Filter by Farmer", filter_options, key="filter_farmer")
-
-        filter_id = None
-        if filter_sel != "All Farmers":
-            filter_id = int(filter_sel.split("]")[0].replace("[", ""))
-
-        try:
-            crops = get_crops(filter_id)
-        except Exception as e:
-            st.error(f"Could not load crops: {e}")
-            return
-
-        if not crops:
-            st.info("No crop records found. Add one from the 'Add Crop Record' tab.")
-            return
-
-        # Summary metrics
-        total = len(crops)
-        growing   = sum(1 for c in crops if c["status"] == "Growing")
-        harvested = sum(1 for c in crops if c["status"] == "Harvested")
-        diseased  = sum(1 for c in crops if c["status"] == "Diseased")
-
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Total Records", total)
-        m2.metric("🌱 Growing", growing)
-        m3.metric("✅ Harvested", harvested)
-        m4.metric("🔴 Diseased", diseased)
-        st.markdown("---")
-
-        # Build farmer id→name map for display
-        farmer_name_map = {f["id"]: f["name"] for f in farmers}
-
-        for crop in crops:
-            cid       = crop["id"]
-            cname     = crop["crop_name"]
-            cstatus   = crop["status"] or "Growing"
-            cplant    = crop["planting_date"] or "—"
-            charvest  = crop["expected_harvest"] or "—"
-            carea     = crop["area"] if crop["area"] else 0.0
-            cnotes    = crop["notes"] or ""
-            cfid      = crop["farmer_id"]
-            cfarmer   = farmer_name_map.get(cfid, f"Farmer #{cfid}")
-            emoji     = STATUS_EMOJI.get(cstatus, "🌿")
-
-            with st.expander(f"{emoji} {cname}  |  👨‍🌾 {cfarmer}  |  📊 {cstatus}  |  🌾 {carea} acres"):
-                c1, c2 = st.columns(2)
-                with c1:
-                    st.write(f"**Crop:** {cname}")
-                    st.write(f"**Farmer:** {cfarmer}")
-                    st.write(f"**Status:** {emoji} {cstatus}")
-                with c2:
-                    st.write(f"**Planted:** {cplant}")
-                    st.write(f"**Harvest:** {charvest}")
-                    st.write(f"**Area:** {carea} acres")
-
-                if cnotes:
-                    st.info(f"📝 **Notes:** {cnotes}")
-
-                # Pest tip for this crop
-                tip = PEST_TIPS.get(cname)
-                if tip:
-                    st.warning(f"🛡️ **Pest Tip:** {tip}")
-
-                st.markdown("---")
-                ecol1, ecol2 = st.columns(2)
-
-                # Edit
-                with ecol1:
-                    with st.popover("✏️ Edit"):
-                        new_name     = st.selectbox("Crop", CROP_LIST,
-                                            index=CROP_LIST.index(cname) if cname in CROP_LIST else 0,
-                                            key=f"cn_{cid}")
-                        new_status   = st.selectbox("Status", STATUS_OPTIONS,
-                                            index=STATUS_OPTIONS.index(cstatus) if cstatus in STATUS_OPTIONS else 0,
-                                            key=f"cs_{cid}")
-                        new_area     = st.number_input("Area (Acres)", value=float(carea),
-                                            min_value=0.0, step=0.5, key=f"ca_{cid}")
-                        new_notes    = st.text_area("Notes", value=cnotes, key=f"cn2_{cid}")
-                        if st.button("💾 Save", key=f"save_{cid}"):
-                            try:
-                                update_crop(cid, new_name, cplant, charvest,
-                                            new_area, new_status, new_notes)
-                                st.success("Updated!")
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Update failed: {e}")
-
-                # Delete
-                with ecol2:
-                    if st.button(f"🗑️ Delete", key=f"del_{cid}", type="secondary"):
-                        try:
-                            delete_crop(cid)
-                            st.success(f"Deleted {cname} record.")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Delete failed: {e}")
-
-    # ── PEST TIPS ─────────────────────────────────────────────────────────────
     with tab3:
-        st.subheader("🛡️ Pest Protection Tips by Crop")
-        st.markdown("Quick reference guide for common pests and diseases affecting your crops.")
-        st.markdown("---")
-
-        for crop, tip in PEST_TIPS.items():
-            with st.expander(f"🌾 {crop}"):
-                st.warning(f"⚠️ {tip}")
-
-        st.markdown("---")
-        st.info(
-            "💡 **General Best Practices:**\n\n"
-            "- Rotate crops every season to break pest cycles\n"
-            "- Use certified disease-free seeds\n"
-            "- Monitor fields every 3–5 days during critical growth stages\n"
-            "- Apply pesticides early morning or evening to minimize bee impact\n"
-            "- Keep field drainage clear to prevent fungal diseases"
-        )
-# Crop Module v1.0
-
-# Crop Module v1.0
+        pest_tips_tab()
