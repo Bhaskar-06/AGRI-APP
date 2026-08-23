@@ -266,3 +266,39 @@ def db_get_pest_logs(farmer_id=None):
 
 def add_pest_log(farmer_id, image_name, disease_detected, confidence, treatment_applied=""):
     return db_add_pest_log(farmer_id, image_name, disease_detected, confidence, treatment_applied)
+
+
+# =============================================================================
+# SOIL IMAGE CLASSIFICATION LOG FUNCTIONS
+# =============================================================================
+
+def db_add_soil_image_log(farmer_id, image_name, soil_type, confidence):
+    db = get_supabase()
+    if not db:
+        return False
+    try:
+        data = {
+            "farmer_id": int(farmer_id) if farmer_id else None,
+            "image_name": image_name,
+            "soil_type": soil_type,
+            "confidence": float(confidence),
+        }
+        db.table("soil_image_logs").insert(data).execute()
+        return True
+    except Exception as e:
+        st.error(f"Soil image log error: {e}")
+        return False
+
+
+def db_get_soil_image_logs(farmer_id=None):
+    db = get_supabase()
+    if not db:
+        return []
+    try:
+        query = db.table("soil_image_logs").select("*, farmers(name)").order("created_at", desc=True)
+        if farmer_id:
+            query = query.eq("farmer_id", farmer_id)
+        result = query.execute()
+        return result.data or []
+    except Exception:
+        return []

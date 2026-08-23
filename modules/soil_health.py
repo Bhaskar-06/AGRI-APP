@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 from database.db import db_add_soil, db_get_soil_records, db_get_farmers
+from modules.soil_image_detection import soil_image_detection_page
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODEL_PATH = os.path.join(BASE_DIR, "models", "crop_recommender.pkl")
@@ -157,3 +158,28 @@ def soil_health_page():
             st.download_button("📥 Download CSV", csv, "soil_history.csv", "text/csv", use_container_width=True)
         else:
             st.info("No soil records yet.")
+
+
+def soil_health_page():
+    st.markdown("# 🧪 Soil Health")
+    st.markdown("Log soil test results, scan soil images, and get AI-based crop recommendations.")
+    st.markdown("---")
+
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "➕ Record Soil Data",
+        "📋 View Records",
+        "🌾 Crop Recommendation",
+        "📷 Soil Image Detection"
+    ])
+
+    with tab1:
+        record_soil_tab()
+
+    with tab2:
+        view_soil_tab()
+
+    with tab3:
+        crop_recommendation_tab()
+
+    with tab4:
+        soil_image_detection_page()
