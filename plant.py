@@ -8,6 +8,7 @@ import streamlit as st
 import numpy as np
 from PIL import Image
 import tensorflow as tf
+import json
 
 try:
     from database.db import add_pest_log, get_all_farmers
@@ -18,21 +19,38 @@ except Exception:
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, "models", "plant_disease_model.h5")
 
-CLASS_NAMES = [
-    'Apple___Apple_scab', 'Apple___Black_rot', 'Apple___Cedar_apple_rust', 'Apple___healthy',
-    'Blueberry___healthy', 'Cherry_(including_sour)___Powdery_mildew', 'Cherry_(including_sour)___healthy',
-    'Corn_(maize)___Cercospora_leaf_spot', 'Corn_(maize)___Common_rust_', 'Corn_(maize)___Northern_Leaf_Blight',
-    'Corn_(maize)___healthy', 'Grape___Black_rot', 'Grape___Esca_(Black_Measles)',
-    'Grape___Leaf_blight_(Isariopsis_Leaf_Spot)', 'Grape___healthy',
-    'Orange___Haunglongbing_(Citrus_greening)', 'Peach___Bacterial_spot', 'Peach___healthy',
-    'Pepper,_bell___Bacterial_spot', 'Pepper,_bell___healthy', 'Potato___Early_blight',
-    'Potato___Late_blight', 'Potato___healthy', 'Raspberry___healthy', 'Soybean___healthy',
-    'Squash___Powdery_mildew', 'Strawberry___Leaf_scorch', 'Strawberry___healthy',
-    'Tomato___Bacterial_spot', 'Tomato___Early_blight', 'Tomato___Late_blight',
-    'Tomato___Leaf_Mold', 'Tomato___Septoria_leaf_spot',
-    'Tomato___Spider_mites Two-spotted_spider_mite', 'Tomato___Target_Spot',
-    'Tomato___Tomato_Yellow_Leaf_Curl_Virus', 'Tomato___Tomato_mosaic_virus', 'Tomato___healthy'
-]
+INDICES_PATH = os.path.join(BASE_DIR, "models", "class_indices.json")
+
+def _load_class_names():
+    """Load class order from class_indices.json so labels always match
+    whatever model.h5 is actually loaded — hardcoding this list is what
+    caused the Apple->Strawberry mislabeling bug."""
+    fallback = [
+        'Apple___Apple_scab', 'Apple___Black_rot', 'Apple___Cedar_apple_rust', 'Apple___healthy',
+        'Blueberry___healthy', 'Cherry_(including_sour)___Powdery_mildew', 'Cherry_(including_sour)___healthy',
+        'Corn_(maize)___Cercospora_leaf_spot', 'Corn_(maize)___Common_rust_', 'Corn_(maize)___Northern_Leaf_Blight',
+        'Corn_(maize)___healthy', 'Grape___Black_rot', 'Grape___Esca_(Black_Measles)',
+        'Grape___Leaf_blight_(Isariopsis_Leaf_Spot)', 'Grape___healthy',
+        'Orange___Haunglongbing_(Citrus_greening)', 'Peach___Bacterial_spot', 'Peach___healthy',
+        'Pepper,_bell___Bacterial_spot', 'Pepper,_bell___healthy', 'Potato___Early_blight',
+        'Potato___Late_blight', 'Potato___healthy', 'Raspberry___healthy', 'Soybean___healthy',
+        'Squash___Powdery_mildew', 'Strawberry___Leaf_scorch', 'Strawberry___healthy',
+        'Tomato___Bacterial_spot', 'Tomato___Early_blight', 'Tomato___Late_blight',
+        'Tomato___Leaf_Mold', 'Tomato___Septoria_leaf_spot',
+        'Tomato___Spider_mites Two-spotted_spider_mite', 'Tomato___Target_Spot',
+        'Tomato___Tomato_Yellow_Leaf_Curl_Virus', 'Tomato___Tomato_mosaic_virus', 'Tomato___healthy'
+    ]
+    if os.path.exists(INDICES_PATH):
+        try:
+            with open(INDICES_PATH, "r") as f:
+                raw = json.load(f)
+            # class_indices.json is saved as {index: class_name} by train_plant_model.py
+            return [raw[str(i)] for i in range(len(raw))]
+        except Exception:
+            pass
+    return fallback
+
+CLASS_NAMES = _load_class_names()
 
 DISEASE_INFO = {
     "Apple___Apple_scab": {"type": "🍎 Fungal Disease", "severity": "Medium",
@@ -330,14 +348,19 @@ def pest_detection_page():
                     display_name = disease.replace("___", " → ").replace("_", " ").title()
                     conf_pct = confidence * 100
 
-                    if "healthy" in disease.lower():
+                    if conf_pct < 40:
+                        st.error(
+                            "⚠️ **Could not confidently identify this plant.** "
+                            "This model only recognizes the crops listed below. If your "
+                            "photo is of a different plant (e.g. mango, pomegranate), "
+                            "results will not be reliable."
+                        )
+                    elif "healthy" in disease.lower():
                         st.success(f"✅ **Diagnosis:** {display_name}")
                     elif conf_pct >= 70:
                         st.error(f"⚠️ **Diagnosis:** {display_name}")
-                    elif conf_pct >= 45:
-                        st.warning(f"🟡 **Diagnosis:** {display_name}")
                     else:
-                        st.warning(f"🔍 **Diagnosis:** {display_name} *(Low confidence)*")
+                        st.warning(f"🟡 **Diagnosis:** {display_name} *(Moderate confidence)*")
 
                     st.metric("Confidence", f"{conf_pct:.1f}%")
                     st.progress(min(confidence, 1.0))

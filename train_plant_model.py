@@ -7,6 +7,7 @@ Includes a fine-tuning phase for higher accuracy.
 
 import os
 import json
+import sys
 import tensorflow as tf
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras import layers, Model
@@ -19,6 +20,13 @@ IMG_SIZE = (224, 224)
 BATCH_SIZE = 32
 EPOCHS_HEAD = 10
 EPOCHS_FINE_TUNE = 5
+
+if not os.path.isdir(DATA_DIR):
+    sys.exit(
+        f"\n❌ Dataset folder not found: {DATA_DIR}\n"
+        f"   Extract your PlantVillage zip so that class folders like "
+        f"'Apple___Apple_scab' sit directly inside '{DATA_DIR}'.\n"
+    )
 
 os.makedirs(os.path.join(BASE_DIR, "models"), exist_ok=True)
 
