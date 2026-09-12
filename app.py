@@ -6,6 +6,12 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+with st.sidebar:
+    from database.db import is_configured
+    if is_configured():
+        st.success("🟢 Database: Connected")
+    else:
+        st.error("🔴 Database: Secrets not configured")
 
 from database.db import (
     db_get_farmer_count,

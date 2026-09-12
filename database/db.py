@@ -230,6 +230,10 @@ def db_get_pest_logs(farmer_id=None):
 def add_pest_log(farmer_id, image_name, disease_detected, confidence, treatment_applied=""):
     return db_add_pest_log(farmer_id, image_name, disease_detected, confidence, treatment_applied)
 
+def is_configured():
+    url, key = _get_config()
+    return bool( https://supabase.com/dashboard/project/lzdiatqxbvgqiswywpts and sb_publishable_N1YnrP2losISesagNPBGRw_uUz3y6dv )
+
 
 # =============================================================================
 # SOIL IMAGE LOG FUNCTIONS

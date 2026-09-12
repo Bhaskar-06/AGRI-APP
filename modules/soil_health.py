@@ -11,9 +11,6 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODEL_PATH = os.path.join(BASE_DIR, "models", "crop_recommender.pkl")
 CSV_PATH = os.path.join(BASE_DIR, "data", "Crop_recommendation.csv")
 
-# Maps a farmer-friendly category to a representative numeric value the
-# ML model expects — same categories used on India's government-issued
-# Soil Health Card, so most farmers already recognize this language.
 NPK_LEVELS = {"Low": 20, "Medium": 60, "High": 100}
 P_LEVELS = {"Low": 15, "Medium": 40, "High": 80}
 K_LEVELS = {"Low": 15, "Medium": 40, "High": 80}
@@ -48,9 +45,6 @@ def load_recommender():
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_weather_for_place(place_name):
-    """Auto-fills temperature, humidity, and rainfall from a village/town
-    name so the farmer never has to know these numbers themselves.
-    Uses Open-Meteo — free, no API key required."""
     try:
         geo = requests.get(
             "https://geocoding-api.open-meteo.com/v1/search",
@@ -75,20 +69,22 @@ def fetch_weather_for_place(place_name):
         temp = weather["current"]["temperature_2m"]
         humidity = weather["current"]["relative_humidity_2m"]
         recent_rain_30d = sum(weather["daily"]["precipitation_sum"])
-        estimated_annual_rainfall = recent_rain_30d * 12  # rough yearly estimate
+        estimated_annual_rainfall = recent_rain_30d * 12
 
         return {"temperature": temp, "humidity": humidity, "rainfall": estimated_annual_rainfall}
     except Exception:
         return None
 
 
-def _simple_soil_inputs():
-    """Farmer-friendly inputs: no lab numbers, no jargon."""
+def _simple_soil_inputs(prefix):
+    """prefix must be unique per tab (e.g. 'record', 'quick') so the same
+    widget can appear on two tabs at once without a duplicate-ID crash."""
     st.markdown("#### 📍 Where is your field?")
     place = st.text_input(
         "Village / Town name",
         placeholder="e.g. Mysuru",
-        help="We'll automatically fetch temperature, humidity and rainfall for this location."
+        help="We'll automatically fetch temperature, humidity and rainfall for this location.",
+        key=f"{prefix}_place"
     )
 
     weather = None
@@ -109,12 +105,12 @@ def _simple_soil_inputs():
 
     col1, col2 = st.columns(2)
     with col1:
-        n_choice = st.selectbox("Nitrogen level", list(NPK_LEVELS.keys()), index=1, key="simple_n")
-        p_choice = st.selectbox("Phosphorus level", list(P_LEVELS.keys()), index=1, key="simple_p")
-        k_choice = st.selectbox("Potassium level", list(K_LEVELS.keys()), index=1, key="simple_k")
+        n_choice = st.selectbox("Nitrogen level", list(NPK_LEVELS.keys()), index=1, key=f"{prefix}_n")
+        p_choice = st.selectbox("Phosphorus level", list(P_LEVELS.keys()), index=1, key=f"{prefix}_p")
+        k_choice = st.selectbox("Potassium level", list(K_LEVELS.keys()), index=1, key=f"{prefix}_k")
     with col2:
-        ph_choice = st.selectbox("Soil type", list(PH_LEVELS.keys()), index=1, key="simple_ph")
-        moisture_choice = st.selectbox("How wet is the soil right now?", list(MOISTURE_LEVELS.keys()), index=1, key="simple_moi")
+        ph_choice = st.selectbox("Soil type", list(PH_LEVELS.keys()), index=1, key=f"{prefix}_ph")
+        moisture_choice = st.selectbox("How wet is the soil right now?", list(MOISTURE_LEVELS.keys()), index=1, key=f"{prefix}_moi")
 
     return {
         "N": NPK_LEVELS[n_choice], "P": P_LEVELS[p_choice], "K": K_LEVELS[k_choice],
@@ -125,19 +121,18 @@ def _simple_soil_inputs():
     }
 
 
-def _advanced_soil_inputs():
-    """For users with exact lab/sensor readings."""
+def _advanced_soil_inputs(prefix):
     col1, col2 = st.columns(2)
     with col1:
-        N = st.number_input("Nitrogen (N) kg/ha", 0.0, 200.0, 50.0, key="adv_n")
-        P = st.number_input("Phosphorus (P) kg/ha", 0.0, 200.0, 30.0, key="adv_p")
-        K = st.number_input("Potassium (K) kg/ha", 0.0, 200.0, 40.0, key="adv_k")
-        ph = st.slider("Soil pH", 0.0, 14.0, 6.5, 0.1, key="adv_ph")
+        N = st.number_input("Nitrogen (N) kg/ha", 0.0, 200.0, 50.0, key=f"{prefix}_adv_n")
+        P = st.number_input("Phosphorus (P) kg/ha", 0.0, 200.0, 30.0, key=f"{prefix}_adv_p")
+        K = st.number_input("Potassium (K) kg/ha", 0.0, 200.0, 40.0, key=f"{prefix}_adv_k")
+        ph = st.slider("Soil pH", 0.0, 14.0, 6.5, 0.1, key=f"{prefix}_adv_ph")
     with col2:
-        temp = st.number_input("Temperature (°C)", 0.0, 60.0, 25.0, key="adv_temp")
-        hum = st.number_input("Humidity (%)", 0.0, 100.0, 60.0, key="adv_hum")
-        moi = st.number_input("Moisture (%)", 0.0, 100.0, 40.0, key="adv_moi")
-        rain = st.number_input("Rainfall (mm/yr)", 0.0, 3000.0, 500.0, key="adv_rain")
+        temp = st.number_input("Temperature (°C)", 0.0, 60.0, 25.0, key=f"{prefix}_adv_temp")
+        hum = st.number_input("Humidity (%)", 0.0, 100.0, 60.0, key=f"{prefix}_adv_hum")
+        moi = st.number_input("Moisture (%)", 0.0, 100.0, 40.0, key=f"{prefix}_adv_moi")
+        rain = st.number_input("Rainfall (mm/yr)", 0.0, 3000.0, 500.0, key=f"{prefix}_adv_rain")
 
     return {"N": N, "P": P, "K": K, "ph": ph, "moisture": moi, "temp": temp, "hum": hum, "rain": rain}
 
@@ -152,15 +147,15 @@ def record_soil_tab():
     if "soil_result" not in st.session_state:
         st.session_state["soil_result"] = None
 
-    farmer_key = st.selectbox("Link to Farmer (optional)", list(farmer_options.keys()), key="sh_farmer")
-    field_name = st.text_input("Field Name", key="sh_field")
+    farmer_key = st.selectbox("Link to Farmer (optional)", list(farmer_options.keys()), key="record_farmer")
+    field_name = st.text_input("Field Name", key="record_field")
 
-    advanced = st.checkbox("📋 I have exact soil test numbers (advanced)", key="sh_advanced_toggle")
+    advanced = st.checkbox("📋 I have exact soil test numbers (advanced)", key="record_advanced_toggle")
     st.markdown("---")
 
-    values = _advanced_soil_inputs() if advanced else _simple_soil_inputs()
+    values = _advanced_soil_inputs("record") if advanced else _simple_soil_inputs("record")
 
-    if st.button("🔍 Get Recommendation", type="primary", key="sh_submit", use_container_width=True):
+    if st.button("🔍 Get Recommendation", type="primary", key="record_submit", use_container_width=True):
         with st.spinner("Analyzing soil data..."):
             try:
                 model = load_recommender()
@@ -218,7 +213,7 @@ def record_soil_tab():
         for tip in r["tips"]:
             st.markdown(f"- {tip}")
 
-        if st.button("🔄 Clear & Analyze New Soil", key="sh_clear"):
+        if st.button("🔄 Clear & Analyze New Soil", key="record_clear"):
             st.session_state["soil_result"] = None
             st.rerun()
 
@@ -228,7 +223,7 @@ def view_soil_tab():
 
     col1, col2 = st.columns([4, 1])
     with col2:
-        if st.button("🔄 Refresh", use_container_width=True, key="soil_refresh"):
+        if st.button("🔄 Refresh", use_container_width=True, key="view_refresh"):
             st.rerun()
 
     rows = db_get_soil_records()
@@ -257,11 +252,11 @@ def crop_recommendation_tab():
     st.caption("No record saved — just a quick check.")
 
     model = load_recommender()
-    advanced = st.checkbox("📋 I have exact soil test numbers (advanced)", key="cr_advanced_toggle")
+    advanced = st.checkbox("📋 I have exact soil test numbers (advanced)", key="quick_advanced_toggle")
 
-    values = _advanced_soil_inputs() if advanced else _simple_soil_inputs()
+    values = _advanced_soil_inputs("quick") if advanced else _simple_soil_inputs("quick")
 
-    if st.button("🌾 Recommend Crop", type="primary", use_container_width=True, key="cr_btn"):
+    if st.button("🌾 Recommend Crop", type="primary", use_container_width=True, key="quick_submit"):
         try:
             features = np.array([[values["N"], values["P"], values["K"],
                                    values["temp"], values["hum"], values["ph"], values["rain"]]])
