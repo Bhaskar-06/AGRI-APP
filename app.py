@@ -6,14 +6,9 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-with st.sidebar:
-    from database.db import is_configured
-    if is_configured():
-        st.success("🟢 Database: Connected")
-    else:
-        st.error("🔴 Database: Secrets not configured")
 
 from database.db import (
+    is_configured,
     db_get_farmer_count,
     db_get_crop_count,
     db_get_soil_count
@@ -29,6 +24,12 @@ if "active_page" not in st.session_state:
 with st.sidebar:
     st.title("🌾 Smart Agriculture")
     st.markdown("AI-Powered Farm Management")
+
+    if is_configured():
+        st.success("🟢 Database: Connected")
+    else:
+        st.error("🔴 Database: Secrets not configured")
+
     st.markdown("---")
 
     pages = [

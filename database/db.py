@@ -2,8 +2,7 @@ import requests
 import streamlit as st
 
 # =============================================================================
-# SUPABASE REST API CLIENT (no SDK — avoids the gotrue/httpx 'proxy' dependency
-# conflict entirely, since this only needs the plain `requests` library)
+# SUPABASE REST API CLIENT (no SDK — avoids gotrue/httpx dependency conflicts)
 # =============================================================================
 
 def _get_config():
@@ -13,6 +12,11 @@ def _get_config():
         return url, key
     except Exception:
         return None, None
+
+
+def is_configured():
+    url, key = _get_config()
+    return bool(url and key)
 
 
 def _headers(prefer=None):
@@ -229,10 +233,6 @@ def db_get_pest_logs(farmer_id=None):
 
 def add_pest_log(farmer_id, image_name, disease_detected, confidence, treatment_applied=""):
     return db_add_pest_log(farmer_id, image_name, disease_detected, confidence, treatment_applied)
-
-def is_configured():
-    url, key = _get_config()
-    return bool( https://supabase.com/dashboard/project/lzdiatqxbvgqiswywpts and sb_publishable_N1YnrP2losISesagNPBGRw_uUz3y6dv )
 
 
 # =============================================================================
