@@ -17,7 +17,7 @@ except Exception:
     HAS_DB = False
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_PATH = os.path.join(BASE_DIR, "models", "plant_disease_model.tflite")
+MODEL_PATH = os.path.join(BASE_DIR, "models", "plant_disease_model.h5")
 INDICES_PATH = os.path.join(BASE_DIR, "models", "class_indices.json")
 
 PLANT_MODEL_URL = "https://huggingface.co/bhaskar06/agri-plant-disease-model/resolve/main/plant_disease_model.h5"
@@ -49,7 +49,6 @@ def _load_class_names():
         try:
             with open(INDICES_PATH, "r") as f:
                 raw = json.load(f)
-            # class_indices.json is saved as {index: class_name} by train_plant_model.py
             return [raw[str(i)] for i in range(len(raw))]
         except Exception:
             pass
@@ -301,14 +300,7 @@ def preprocess_image(image):
 
 def predict(image, model):
     arr = preprocess_image(image)
-
-    input_details = model.get_input_details()
-    output_details = model.get_output_details()
-
-    model.set_tensor(input_details[0]['index'], arr)
-    model.invoke()
-    preds = model.get_tensor(output_details[0]['index'])[0]
-
+    preds = model.predict(arr, verbose=0)[0]
     top3_idx = np.argsort(preds)[::-1][:3]
     top3 = [(CLASS_NAMES[i], float(preds[i])) for i in top3_idx]
     return CLASS_NAMES[top3_idx[0]], float(preds[top3_idx[0]]), top3

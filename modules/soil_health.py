@@ -76,9 +76,29 @@ def fetch_weather_for_place(place_name):
         return None
 
 
+def _soil_type_dropdowns(prefix):
+    """Shared N/P/K/pH/moisture category pickers used by both tabs —
+    this part is short enough that repeating it isn't confusing, unlike
+    the location/weather lookup which only appears in the Record tab."""
+    col1, col2 = st.columns(2)
+    with col1:
+        n_choice = st.selectbox("Nitrogen level", list(NPK_LEVELS.keys()), index=1, key=f"{prefix}_n")
+        p_choice = st.selectbox("Phosphorus level", list(P_LEVELS.keys()), index=1, key=f"{prefix}_p")
+        k_choice = st.selectbox("Potassium level", list(K_LEVELS.keys()), index=1, key=f"{prefix}_k")
+    with col2:
+        ph_choice = st.selectbox("Soil type", list(PH_LEVELS.keys()), index=1, key=f"{prefix}_ph")
+        moisture_choice = st.selectbox("How wet is the soil right now?", list(MOISTURE_LEVELS.keys()), index=1, key=f"{prefix}_moi")
+
+    return {
+        "N": NPK_LEVELS[n_choice], "P": P_LEVELS[p_choice], "K": K_LEVELS[k_choice],
+        "ph": PH_LEVELS[ph_choice], "moisture": MOISTURE_LEVELS[moisture_choice],
+    }
+
+
 def _simple_soil_inputs(prefix):
-    """prefix must be unique per tab (e.g. 'record', 'quick') so the same
-    widget can appear on two tabs at once without a duplicate-ID crash."""
+    """Full version with location + auto weather lookup — used only on
+    the Record Soil Data tab, since that's the one that saves a record
+    and benefits from real location-specific climate data."""
     st.markdown("#### 📍 Where is your field?")
     place = st.text_input(
         "Village / Town name",
@@ -103,22 +123,27 @@ def _simple_soil_inputs(prefix):
     st.markdown("#### 🌱 About your soil")
     st.caption("If you have a Soil Health Card from the government, use those N/P/K ratings here.")
 
-    col1, col2 = st.columns(2)
-    with col1:
-        n_choice = st.selectbox("Nitrogen level", list(NPK_LEVELS.keys()), index=1, key=f"{prefix}_n")
-        p_choice = st.selectbox("Phosphorus level", list(P_LEVELS.keys()), index=1, key=f"{prefix}_p")
-        k_choice = st.selectbox("Potassium level", list(K_LEVELS.keys()), index=1, key=f"{prefix}_k")
-    with col2:
-        ph_choice = st.selectbox("Soil type", list(PH_LEVELS.keys()), index=1, key=f"{prefix}_ph")
-        moisture_choice = st.selectbox("How wet is the soil right now?", list(MOISTURE_LEVELS.keys()), index=1, key=f"{prefix}_moi")
+    base = _soil_type_dropdowns(prefix)
+    base["temp"] = weather["temperature"] if weather else 27.0
+    base["hum"] = weather["humidity"] if weather else 65.0
+    base["rain"] = weather["rainfall"] if weather else 500.0
+    return base
 
-    return {
-        "N": NPK_LEVELS[n_choice], "P": P_LEVELS[p_choice], "K": K_LEVELS[k_choice],
-        "ph": PH_LEVELS[ph_choice], "moisture": MOISTURE_LEVELS[moisture_choice],
-        "temp": weather["temperature"] if weather else 27.0,
-        "hum": weather["humidity"] if weather else 65.0,
-        "rain": weather["rainfall"] if weather else 500.0,
-    }
+
+def _quick_soil_inputs(prefix):
+    """Lighter version for the Quick Crop Recommendation tab — no location
+    lookup, since this is meant to be a fast, no-save check. Uses typical
+    seasonal averages for climate values instead."""
+    st.markdown("#### 🌱 About your soil")
+    st.caption("If you have a Soil Health Card from the government, use those N/P/K ratings here.")
+    st.caption("ℹ️ Uses typical seasonal climate averages. For location-specific weather, "
+               "use the **Record Soil Data** tab instead.")
+
+    base = _soil_type_dropdowns(prefix)
+    base["temp"] = 27.0
+    base["hum"] = 65.0
+    base["rain"] = 500.0
+    return base
 
 
 def _advanced_soil_inputs(prefix):
@@ -254,7 +279,7 @@ def crop_recommendation_tab():
     model = load_recommender()
     advanced = st.checkbox("📋 I have exact soil test numbers (advanced)", key="quick_advanced_toggle")
 
-    values = _advanced_soil_inputs("quick") if advanced else _simple_soil_inputs("quick")
+    values = _advanced_soil_inputs("quick") if advanced else _quick_soil_inputs("quick")
 
     if st.button("🌾 Recommend Crop", type="primary", use_container_width=True, key="quick_submit"):
         try:
